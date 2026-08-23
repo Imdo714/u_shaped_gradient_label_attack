@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Generated experiment artifacts: checkpoints, transcripts, plots, and reports.
+workspace/results/
+
+# Reproducible public image binaries. Keep the manifest, source note, and
+# dataset_classes.json in Git; regenerate images with prepare_public_dataset.
+workspace/data/dataset/train/
+workspace/data/dataset/val/
+workspace/data/dataset/test/
+workspace/data/anchors/
+workspace/data/**/*.part
+
+# Large machine-learning artifacts accidentally written outside results/.
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
