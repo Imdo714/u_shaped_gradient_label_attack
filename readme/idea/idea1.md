@@ -396,29 +396,20 @@ Target z를 서버가 직접 관찰하므로 피해 표본 복원 자체에는 f
 ## 12. 권장 코드 구조
 
 ```text
-src/experiments/reconstruction/
-├─ data/
-│  ├─ observation_dataset.py
-│  └─ observation_collector.py
-├─ surrogate_models/
-│  ├─ surrogate_f.py
-│  └─ surrogate_h.py
-├─ decoder/
-│  ├─ input_encoders.py
-│  ├─ label_conditioned_decoder.py
-│  └─ reconstruction_model.py
-├─ training/
-│  ├─ train_surrogate_f.py
-│  ├─ train_surrogate_h.py
-│  └─ train_decoder.py
-├─ evaluation/
-│  ├─ reconstruction_metrics.py
-│  └─ evaluate_reconstruction.py
-└─ run_reconstruction_experiment.py
+src/decoder/
+├─ data/                 # 관측 수집, 라벨 추론, 공격자/평가자 데이터 분리
+├─ surrogate_models/     # f-hat, h-hat
+├─ models/               # signal encoder, label-conditioned decoder
+├─ losses/               # L1 + SSIM
+├─ training/             # decoder 및 surrogate trainer
+├─ evaluation/           # PSNR, SSIM, MAE, 비교 이미지
+└─ pipeline/             # 전체 실험 CLI
 ```
 
 각 책임을 분리하여 SurrogateF, SurrogateH, decoder, 데이터 수집, 평가지표가
 서로 독립적으로 교체될 수 있도록 한다.
+
+구현된 명령과 산출물은 [복원 실험 가이드](decoder_reconstruction_experiment.md)에 정리한다.
 
 ## 13. 결과 저장 구조
 

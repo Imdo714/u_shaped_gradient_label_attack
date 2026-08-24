@@ -34,6 +34,22 @@ shared/
 shared는 Split Learning 구현을 import하지 않습니다. gradient의 생성·전달·기록
 책임도 갖지 않습니다.
 
+## decoder
+
+```text
+decoder/
+├─ data/                 관측 수집, gradient 라벨 조건, 데이터 경계
+├─ surrogate_models/     공격자 소유 f-hat, h-hat
+├─ models/               신호 encoder와 label-conditioned decoder
+├─ losses/               이미지 복원 손실
+├─ training/             surrogate와 decoder 학습
+├─ evaluation/           복원 지표와 비교 이미지
+└─ pipeline/             end-to-end 복원 실험 조립
+```
+
+decoder는 split_learning이 만든 관측 인터페이스를 재사용하지만,
+split_learning은 decoder를 import하지 않습니다.
+
 ## workspace
 
 ```text

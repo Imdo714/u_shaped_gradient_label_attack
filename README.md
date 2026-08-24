@@ -412,11 +412,13 @@ src/
   split_learning/   # f/g/h 모델, 통신 경계, trainer, 학습 CLI
     models/
   shared/           # 설정, 데이터 로딩, 클래스 카탈로그, 지표, 시각화
+  decoder/          # 관측 수집, f-hat/h-hat, 조건부 복원, 평가
   experiments/      # 공격 알고리즘, 분석 CLI, 전체 실험 오케스트레이션
     attacks/
 ```
 
-의존 방향은 `experiments -> split_learning -> shared`입니다. 데이터, 앵커,
+의존 방향은 experiments/decoder가 split_learning과 shared를 사용하고,
+split_learning은 shared를 사용하는 형태입니다. 데이터, 앵커,
 체크포인트, transcript, 결과와 테스트는 실행 소스가 아니므로 프로젝트 루트에서 관리합니다.
 Python 예약어인 `global`은 import 가능한 패키지명이 아니므로 전역 공용 책임 영역의 이름은
 `shared`를 사용합니다. 모든 CLI는 프로젝트 루트에서 `python -m src...` 형태로 실행합니다.
@@ -444,3 +446,9 @@ workspace/data/anchors/{class_name}/{class_name}_anchor.jpg
 이는 요청된 SimpleNet 계열 CNN과 세 개의 fully connected layer라는 전반적인 설명을 반영한 것입니다. 다만 논문에 명시되지 않은 정확한 채널 수, 은닉 차원, 세부 하이퍼파라미터까지 동일하다고 주장하지 않습니다.
 
 최초 기준 실험에서는 각 epoch을 독립적으로 분석합니다. 서로 다른 epoch의 그래디언트를 결합하는 cross-epoch aggregation은 모델 상태 차이가 결과에 미치는 영향을 분리하기 위해 기본 구현에서 제외했습니다.
+
+## Label-conditioned 이미지 복원 실험
+
+Gradient 라벨 추론 이후 z, u, dL/du, 추론 라벨을 이용하는 이미지 복원 코드는
+src/decoder에 역할별로 분리되어 있습니다. 실행법, f-hat/h-hat 복제 모드와 결과 해석은
+[복원 실험 가이드](readme/decoder_reconstruction_experiment.md)를 참고하세요.
