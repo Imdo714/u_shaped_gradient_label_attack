@@ -94,6 +94,9 @@ SSIM, LPIPS와 분류 일치율 등을 이용해 비교할 예정입니다.
 [readme/gradient_clustering_experiment_guide.md](readme/gradient_clustering_experiment_guide.md)에서
 확인할 수 있습니다.
 
+추론 라벨, gradient, smashed data와 server output을 결합하는 조건부 이미지
+복원 실험 설계는 [readme/idea1.md](readme/idea1.md)에서 확인할 수 있습니다.
+
 ---
 
 ## U자형 분할 학습 구조
