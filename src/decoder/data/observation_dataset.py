@@ -16,6 +16,7 @@ from .image_scaling import denormalize_image, normalize_image
 
 
 LabelMode = Literal["oracle", "inferred-hard", "inferred-soft"]
+ConditionMode = Literal["stored", "oracle", "zero"]
 
 
 def _one_hot(label: int, num_classes: int) -> Tensor:
@@ -136,6 +137,35 @@ class ObservationDataset(Dataset):
         return item
 
 
+class ConditionedObservationDataset(Dataset):
+    """View observations with an explicit label-conditioning ablation."""
+
+    def __init__(
+        self,
+        source: Dataset,
+        condition_mode: ConditionMode,
+        num_classes: int,
+    ) -> None:
+        if condition_mode not in ("stored", "oracle", "zero"):
+            raise ValueError(f"unknown condition mode: {condition_mode}")
+        self.source = source
+        self.condition_mode = condition_mode
+        self.num_classes = num_classes
+
+    def __len__(self) -> int:
+        return len(self.source)
+
+    def __getitem__(self, index: int) -> dict[str, Tensor | str]:
+        item = dict(self.source[index])
+        if self.condition_mode == "zero":
+            item["label_condition"] = torch.zeros(self.num_classes)
+        elif self.condition_mode == "oracle":
+            true_label = int(item["true_label"])
+            item["label_condition"] = _one_hot(true_label, self.num_classes)
+            item["predicted_label"] = torch.tensor(true_label)
+        return item
+
+
 def collect_surrogate_observations(
     source_dataset: ObservationDataset,
     surrogate_f: nn.Module,
@@ -202,6 +232,8 @@ def collect_surrogate_observations(
 
 __all__ = [
     "LabelMode",
+    "ConditionMode",
+    "ConditionedObservationDataset",
     "ObservationDataset",
     "collect_observations",
     "collect_surrogate_observations",

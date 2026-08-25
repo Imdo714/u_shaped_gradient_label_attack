@@ -5,17 +5,17 @@ from pathlib import Path
 
 import numpy as np
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from .attacks.gradient_clustering import (
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ..attacks.gradient_clustering import (
     cluster_normalized_gradients,
     save_cluster_results,
 )
-from .attacks.gradient_features import (
+from ..attacks.gradient_features import (
     cosine_similarity_matrix,
     load_gradient_dataset,
 )
-from ..shared.data.class_catalog import ClassCatalog
-from ..shared.evaluation.visualization import plot_pca, plot_similarity_heatmap
+from ...shared.data.class_catalog import ClassCatalog
+from ...shared.evaluation.visualization import plot_pca, plot_similarity_heatmap
 
 
 def cluster_epoch(transcripts: Path, results: Path, epoch: int, k: int, seed: int = 42):

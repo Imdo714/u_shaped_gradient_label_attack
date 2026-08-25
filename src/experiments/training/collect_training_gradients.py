@@ -5,15 +5,15 @@ from pathlib import Path
 
 import torch
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from ..shared.data.class_catalog import checkpoint_class_catalog
-from ..shared.data.image_dataset import make_loader
-from ..split_learning.architecture.split_learning_model import load_split_learning_model
-from ..split_learning.logging.gradient_transcript_logger import (
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ...shared.data.class_catalog import checkpoint_class_catalog
+from ...shared.data.image_dataset import make_loader
+from ...split_learning.architecture.split_learning_model import load_split_learning_model
+from ...split_learning.logging.gradient_transcript_logger import (
     EvaluatorGroundTruthLogger,
     ServerGradientTranscriptLogger,
 )
-from ..split_learning.training.split_learning_trainer import SplitLearningTrainer
+from ...split_learning.training.split_learning_trainer import SplitLearningTrainer
 
 
 def main() -> None:

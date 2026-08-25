@@ -13,8 +13,7 @@ split_learning/
 └─ training/         optimizer와 학습·평가·CLI 조정
 ```
 
-gradient를 반환하는 코드는
-gradient_flow/gradient_exchange.py에만 있습니다.
+gradient를 반환하는 코드는 gradient_flow/gradient_exchange.py에만 있습니다.
 
 - GradientExchangeResult.grad_h_to_g: h가 g로 반환하는 dL/du
 - GradientExchangeResult.grad_g_to_f: g가 f로 반환하는 dL/dz
@@ -22,6 +21,8 @@ gradient_flow/gradient_exchange.py에만 있습니다.
 - observe_frozen_gradient_exchange(): 파라미터를 갱신하지 않는 gradient 관찰
 
 ## shared
+
+`decoder/`는 Split Learning 구현을 import하지 않습니다. gradient의 생성·전달·기록 책임도 갖지 않습니다.
 
 ```text
 shared/
@@ -31,10 +32,9 @@ shared/
 └─ reproducibility/  난수 시드 고정
 ```
 
-shared는 Split Learning 구현을 import하지 않습니다. gradient의 생성·전달·기록
-책임도 갖지 않습니다.
-
 ## decoder
+
+`decoder/`는 split_learning이 만든 관측 인터페이스를 재사용하지만, split_learning은 decoder를 import하지 않습니다.
 
 ```text
 decoder/
@@ -47,10 +47,9 @@ decoder/
 └─ pipeline/             end-to-end 복원 실험 조립
 ```
 
-decoder는 split_learning이 만든 관측 인터페이스를 재사용하지만,
-split_learning은 decoder를 import하지 않습니다.
-
 ## workspace
+
+`workspace/`는 기본 경로는 shared/configuration/workspace_paths.py에서 한 번만 정의합니다.
 
 ```text
 workspace/
@@ -66,4 +65,17 @@ workspace/
 └─ tests/               자동화 테스트
 ```
 
-기본 경로는 shared/configuration/workspace_paths.py에서 한 번만 정의합니다.
+## experiments
+
+`experiments/`는 학습 자체의 핵심 구현이 아니라, 학습·공격·평가 절차를 실제로 실행하는
+실험 워크플로를 모아 둔 패키지입니다. 역할에 따라 다음과 같이 구분합니다.
+
+```text
+experiments/
+├─ training/          victim 모델 학습과 학습 gradient 수집
+├─ analysis/          공격 성능 평가와 epoch별 변화 분석
+├─ clustering/        gradient·smashed data 군집화와 label 연결
+├─ inference/         학습된 산출물로 단일 이미지 공격 실행
+├─ reconstruction/    decoder 학습과 holdout 이미지 복원 실험
+└─ attacks/           여러 실험에서 재사용하는 공격 알고리즘
+```

@@ -6,12 +6,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .attacks.anchor_mapping import extract_anchor_gradient
-from .attacks.smashed_data_attack import extract_inference_smashed_feature
-from ..shared.data.class_catalog import checkpoint_class_catalog
-from ..shared.data.image_dataset import load_image
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from ..split_learning.architecture.split_learning_model import load_split_learning_model
+from ..attacks.anchor_mapping import extract_anchor_gradient
+from ..attacks.smashed_data_attack import extract_inference_smashed_feature
+from ...shared.data.class_catalog import checkpoint_class_catalog
+from ...shared.data.image_dataset import load_image
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ...split_learning.architecture.split_learning_model import load_split_learning_model
 
 
 def main() -> None:

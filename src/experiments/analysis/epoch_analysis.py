@@ -6,13 +6,13 @@ from pathlib import Path
 
 import torch
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from .attacks.anchor_mapping import extract_anchor_matrix, map_anchors_to_clusters
-from .cluster_gradients import cluster_epoch
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ..attacks.anchor_mapping import extract_anchor_matrix, map_anchors_to_clusters
+from ..clustering.cluster_gradients import cluster_epoch
 from .evaluate_attack import evaluate_files
-from ..shared.data.class_catalog import ClassCatalog
-from ..shared.evaluation.visualization import plot_epoch_f1
-from ..split_learning.architecture.split_learning_model import load_split_learning_model
+from ...shared.data.class_catalog import ClassCatalog
+from ...shared.evaluation.visualization import plot_epoch_f1
+from ...split_learning.architecture.split_learning_model import load_split_learning_model
 
 
 def analyze_epochs(

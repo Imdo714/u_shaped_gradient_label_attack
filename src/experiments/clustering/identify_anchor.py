@@ -7,16 +7,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from .attacks.anchor_mapping import (
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ..attacks.anchor_mapping import (
     extract_anchor_gradient,
     extract_anchor_matrix,
     map_anchors_to_clusters,
     print_anchor_mapping,
 )
-from ..shared.data.class_catalog import checkpoint_class_catalog
-from ..shared.data.image_dataset import load_image
-from ..split_learning.architecture.split_learning_model import load_split_learning_model
+from ...shared.data.class_catalog import checkpoint_class_catalog
+from ...shared.data.image_dataset import load_image
+from ...split_learning.architecture.split_learning_model import load_split_learning_model
 
 
 def describe_single_anchor(

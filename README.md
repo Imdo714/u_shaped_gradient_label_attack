@@ -232,7 +232,7 @@ Gradient 군집화 실행 명령, cut별 결과와 지표 해석은
 동일한 이미지와 동일한 모델 출력에 CAT과 DOG 레이블만 번갈아 적용해 `dL/du`가 달라지는지 확인합니다.
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.same_image_different_label --image ./workspace/data/anchors/cat/cat_anchor.jpg --checkpoint ./workspace/results/checkpoints/model.pt
+.\.venv\Scripts\python.exe -m src.experiments.analysis.same_image_different_label --image ./workspace/data/anchors/cat/cat_anchor.jpg --checkpoint ./workspace/results/checkpoints/model.pt
 ```
 
 이 실험은 레이블이 그래디언트에 영향을 준다는 사실을 확인하기 위한 인과적 sanity check이며, 그 자체가 레이블 추론 공격은 아닙니다.
@@ -242,13 +242,13 @@ Gradient 군집화 실행 명령, cut별 결과와 지표 해석은
 하나의 고정된 체크포인트에서 샘플별 학습 손실 그래디언트를 수집합니다. 실제 레이블은 ClientTail만 사용하며 공격자 transcript 파일에는 저장되지 않습니다.
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.collect_training_gradients --data ./workspace/data/dataset --split train --checkpoint ./workspace/results/checkpoints/model.pt --epoch 1
+.\.venv\Scripts\python.exe -m src.experiments.training.collect_training_gradients --data ./workspace/data/dataset --split train --checkpoint ./workspace/results/checkpoints/model.pt --epoch 1
 ```
 
 ### 4. 레이블 없이 그래디언트 클러스터링
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.cluster_gradients --transcripts ./workspace/results/transcripts --results ./workspace/results/reports --epoch 1 --data ./workspace/data/dataset
+.\.venv\Scripts\python.exe -m src.experiments.clustering.cluster_gradients --transcripts ./workspace/results/transcripts --results ./workspace/results/reports --epoch 1 --data ./workspace/data/dataset
 ```
 
 그래디언트는 평탄화한 다음 다음 식으로 L2 정규화합니다.
@@ -264,7 +264,7 @@ K-means에는 실제 레이블이 전달되지 않습니다. 이 단계에서 Cl
 체크포인트와 centroid의 epoch을 동일하게 지정해야 합니다.
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.identify_anchor --anchor-dir ./workspace/data/anchors --checkpoint ./workspace/results/checkpoints/epoch_001.pt --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
+.\.venv\Scripts\python.exe -m src.experiments.clustering.identify_anchor --anchor-dir ./workspace/data/anchors --checkpoint ./workspace/results/checkpoints/epoch_001.pt --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
 ```
 
 클래스당 하나의 알려진 앵커를 사용하며, 일반적인 K개 클래스에서도 일대일 대응이 유지되도록 Hungarian 알고리즘으로 클러스터와 클래스 사이의 할당을 계산합니다.
@@ -272,7 +272,7 @@ K-means에는 실제 레이블이 전달되지 않습니다. 이 단계에서 Cl
 ### 6. 교체 가능한 단일 Cat 이미지 실험
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.identify_anchor --image ./my_images/real_cat.jpg --label cat --checkpoint ./workspace/results/checkpoints/epoch_001.pt --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
+.\.venv\Scripts\python.exe -m src.experiments.clustering.identify_anchor --image ./my_images/real_cat.jpg --label cat --checkpoint ./workspace/results/checkpoints/epoch_001.pt --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
 ```
 
 프로그램은 이미지 파일명, 알려진 앵커 레이블, 각 클러스터와의 코사인 유사도 및 정규화 유클리드 거리, 최종 할당 클러스터를 출력합니다.
@@ -282,7 +282,7 @@ K-means에는 실제 레이블이 전달되지 않습니다. 이 단계에서 Cl
 평가는 비지도 클러스터링과 앵커 매핑이 완료된 뒤에만 실제 레이블을 사용합니다.
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.evaluate_attack --epoch 1 --mapping ./workspace/results/reports/cluster_mapping.json
+.\.venv\Scripts\python.exe -m src.experiments.analysis.evaluate_attack --epoch 1 --mapping ./workspace/results/reports/cluster_mapping.json
 ```
 
 다음 지표를 계산합니다.
@@ -299,7 +299,7 @@ K-means에는 실제 레이블이 전달되지 않습니다. 이 단계에서 Cl
 ### 8. epoch별 공격 성능 분석
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.epoch_analysis --anchor-dir ./workspace/data/anchors --data ./workspace/data/dataset
+.\.venv\Scripts\python.exe -m src.experiments.analysis.epoch_analysis --anchor-dir ./workspace/data/anchors --data ./workspace/data/dataset
 ```
 
 각 epoch의 그래디언트는 서로 섞지 않고 독립적으로 클러스터링합니다. 서로 다른 모델 상태의 그래디언트를 섞으면 모델 변화가 교란 요인이 될 수 있기 때문입니다.
@@ -331,9 +331,9 @@ K-means에는 실제 레이블이 전달되지 않습니다. 이 단계에서 Cl
 순수 추론 단계에서는 일반적으로 실제 레이블과 훈련 손실이 없으므로 손실 그래디언트도 존재하지 않습니다. 따라서 `inference_smashed` 모드는 존재하지 않는 그래디언트를 임의로 만들지 않고 `f(image)`의 smashed data를 특징으로 사용합니다.
 
 ```bash
-.\.venv\Scripts\python.exe -m src.experiments.attack_image --attack-mode training_gradient --image ./workspace/data/anchors/cat/cat_anchor.jpg --label cat --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
-.\.venv\Scripts\python.exe -m src.experiments.cluster_smashed_data --transcripts ./workspace/results/transcripts --epoch 1
-.\.venv\Scripts\python.exe -m src.experiments.attack_image --attack-mode inference_smashed --image ./unknown.jpg --centroids ./workspace/results/reports/smashed_centroids.npy
+.\.venv\Scripts\python.exe -m src.experiments.inference.attack_image --attack-mode training_gradient --image ./workspace/data/anchors/cat/cat_anchor.jpg --label cat --centroids ./workspace/results/reports/gradient_centroids_epoch_001.npy
+.\.venv\Scripts\python.exe -m src.experiments.clustering.cluster_smashed_data --transcripts ./workspace/results/transcripts --epoch 1
+.\.venv\Scripts\python.exe -m src.experiments.inference.attack_image --attack-mode inference_smashed --image ./unknown.jpg --centroids ./workspace/results/reports/smashed_centroids.npy
 ```
 
 추론용 centroid는 smashed-data 특징으로 별도 학습해야 합니다. 그래디언트 특징과 smashed-data 특징은 차원과 의미가 다르므로 서로 혼용할 수 없습니다.

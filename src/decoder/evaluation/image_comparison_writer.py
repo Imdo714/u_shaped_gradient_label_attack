@@ -17,6 +17,7 @@ class ReconstructionComparisonWriter:
         class_names: tuple[str, ...],
         max_grid_images: int = 12,
         grid_columns: int = 3,
+        save_separate_images: bool = True,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.comparison_dir = self.output_dir / "comparisons"
@@ -24,7 +25,13 @@ class ReconstructionComparisonWriter:
         self.class_names = class_names
         self.max_grid_images = max_grid_images
         self.grid_columns = grid_columns
+        self.save_separate_images = save_separate_images
         self._panels: list[Image.Image] = []
+        if save_separate_images:
+            self.originals_dir = self.output_dir / "originals"
+            self.reconstructions_dir = self.output_dir / "reconstructions"
+            self.originals_dir.mkdir(parents=True, exist_ok=True)
+            self.reconstructions_dir.mkdir(parents=True, exist_ok=True)
 
     def _class_name(self, label: int) -> str:
         if 0 <= label < len(self.class_names):
@@ -43,6 +50,9 @@ class ReconstructionComparisonWriter:
         reconstructed_image = to_pil_image(
             reconstruction.detach().cpu().clamp(0.0, 1.0)
         )
+        if self.save_separate_images:
+            original_image.save(self.originals_dir / f"{sample_id}.png")
+            reconstructed_image.save(self.reconstructions_dir / f"{sample_id}.png")
 
         width, height = original_image.size
         header_height = 34

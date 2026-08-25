@@ -1,6 +1,6 @@
 import torch
 
-from src.experiments.same_image_different_label import label_gradient
+from src.experiments.analysis.same_image_different_label import label_gradient
 from src.split_learning.architecture.split_learning_model import (
     build_split_learning_model,
 )

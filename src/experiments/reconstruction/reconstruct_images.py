@@ -1,6 +1,6 @@
 """Compatibility entry point for the decoder reconstruction experiment."""
 
-from .reconstruction.reconstruct_images import main
+from src.decoder.pipeline.run_reconstruction_experiment import main
 
 
 if __name__ == "__main__":

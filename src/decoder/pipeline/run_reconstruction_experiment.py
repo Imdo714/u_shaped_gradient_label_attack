@@ -14,10 +14,12 @@ from ...shared.reproducibility.random_seed import seed_everything
 from ...split_learning.architecture.split_learning_model import load_split_learning_model
 from ..data.gradient_label_predictor import GradientLabelPredictor
 from ..data.observation_dataset import (
+    ConditionedObservationDataset,
     ObservationDataset,
     collect_observations,
     collect_surrogate_observations,
 )
+from ..data.holdout_selection import assert_holdouts_excluded
 from ..evaluation.reconstruction_evaluator import evaluate_reconstructions
 from ..models.label_conditioned_decoder import DecoderConfig, LabelConditionedDecoder
 from ..surrogate_models.surrogate_f_model import SurrogateFModel
@@ -70,6 +72,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--decoder-preset", choices=("baseline", "strong"), default="baseline"
+    )
+    parser.add_argument("--signal-spatial-size", type=int, default=None)
+    parser.add_argument("--signal-channels", type=int, default=None)
+    parser.add_argument("--label-channels", type=int, default=None)
+    parser.add_argument("--decoder-base-channels", type=int, default=None)
+    parser.add_argument("--decoder-min-channels", type=int, default=None)
+    parser.add_argument("--decoder-refinement-blocks", type=int, default=None)
+    parser.add_argument("--l1-weight", type=float, default=None)
+    parser.add_argument("--ssim-weight", type=float, default=None)
+    parser.add_argument("--edge-weight", type=float, default=None)
+    parser.add_argument("--perceptual-weight", type=float, default=None)
+    parser.add_argument("--max-grid-images", type=int, default=12)
+    parser.add_argument(
+        "--no-save-separate-images",
+        action="store_false",
+        dest="save_separate_images",
+        help="Do not save individual originals/ and reconstructions/ PNG files.",
+    )
+    parser.set_defaults(save_separate_images=True)
     return parser
 
 
@@ -87,7 +110,13 @@ def _signal_selection(value: str) -> set[str]:
     return selected
 
 
-def _loader(args, split: str, class_names: tuple[str, ...]):
+def _loader(
+    args,
+    split: str,
+    class_names: tuple[str, ...],
+    include_sample_ids: set[str] | None = None,
+    exclude_sample_ids: set[str] | None = None,
+):
     return make_loader(
         args.data,
         split,
@@ -96,10 +125,59 @@ def _loader(args, split: str, class_names: tuple[str, ...]):
         num_workers=args.num_workers,
         shuffle=False,
         class_names=class_names,
+        include_sample_ids=include_sample_ids,
+        exclude_sample_ids=exclude_sample_ids,
     )
 
 
-def run(args: argparse.Namespace) -> dict[str, float | int]:
+DECODER_PRESETS = {
+    "baseline": {
+        "signal_spatial_size": 8,
+        "signal_channels": 32,
+        "label_channels": 16,
+        "decoder_base_channels": 128,
+        "decoder_min_channels": 16,
+        "decoder_refinement_blocks": 0,
+        "l1_weight": 1.0,
+        "ssim_weight": 0.5,
+        "edge_weight": 0.0,
+        "perceptual_weight": 0.0,
+    },
+    "strong": {
+        "signal_spatial_size": 16,
+        "signal_channels": 64,
+        "label_channels": 32,
+        "decoder_base_channels": 256,
+        "decoder_min_channels": 32,
+        "decoder_refinement_blocks": 1,
+        "l1_weight": 1.0,
+        "ssim_weight": 0.75,
+        "edge_weight": 0.15,
+        "perceptual_weight": 0.25,
+    },
+}
+
+
+def resolved_decoder_options(args: argparse.Namespace) -> dict[str, int | float]:
+    preset_name = getattr(args, "decoder_preset", "baseline")
+    options = dict(DECODER_PRESETS[preset_name])
+    for name in options:
+        override = getattr(args, name, None)
+        if override is not None:
+            options[name] = override
+    return options
+
+
+def run(
+    args: argparse.Namespace,
+    *,
+    evaluation_split: str = "test",
+    evaluation_sample_ids: set[str] | None = None,
+    excluded_sample_ids: set[str] | None = None,
+    condition_mode: str = "stored",
+    shared_observations_dir: str | Path | None = None,
+    reuse_observations: bool = False,
+) -> dict[str, float | int]:
     seed_everything(args.seed)
     device = _device(args.device)
     victim_model, metadata = load_split_learning_model(args.checkpoint, device)
@@ -110,7 +188,11 @@ def run(args: argparse.Namespace) -> dict[str, float | int]:
         output = Path("workspace/results/decoder") / stamp
     else:
         output = Path(args.output)
-    observations = output / "observations"
+    observations = (
+        Path(shared_observations_dir)
+        if shared_observations_dir is not None
+        else output / "observations"
+    )
     output.mkdir(parents=True, exist_ok=True)
 
     predictor = None
@@ -122,24 +204,53 @@ def run(args: argparse.Namespace) -> dict[str, float | int]:
             args.temperature,
         )
 
-    print("[1/4] Collecting auxiliary train/validation observations...")
-    train_manifest = collect_observations(
-        victim_model, _loader(args, "train", catalog.names), observations / "train",
-        device, catalog.num_classes, "oracle", max_samples=args.max_train_samples,
-    )
-    validation_manifest = collect_observations(
-        victim_model, _loader(args, "val", catalog.names), observations / "val",
-        device, catalog.num_classes, "oracle", max_samples=args.max_val_samples,
-    )
-    print("[2/4] Collecting victim observations with gradient-inferred labels...")
-    test_manifest = collect_observations(
-        victim_model, _loader(args, "test", catalog.names), observations / "test",
-        device, catalog.num_classes, args.victim_label_mode, predictor=predictor,
-        max_samples=args.max_test_samples,
-    )
+    excluded_sample_ids = excluded_sample_ids or set()
+    if reuse_observations:
+        train_manifest = observations / "train" / "manifest.csv"
+        validation_manifest = observations / "val" / "manifest.csv"
+        test_manifest = observations / "test" / "manifest.csv"
+        missing = [
+            path
+            for path in (train_manifest, validation_manifest, test_manifest)
+            if not path.is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(f"shared observation manifests not found: {missing}")
+        print("[1/4] Reusing shared train/validation/victim observations...")
+    else:
+        print("[1/4] Collecting auxiliary train/validation observations...")
+        train_manifest = collect_observations(
+            victim_model,
+            _loader(args, "train", catalog.names, exclude_sample_ids=excluded_sample_ids),
+            observations / "train",
+            device, catalog.num_classes, "oracle", max_samples=args.max_train_samples,
+        )
+        validation_manifest = collect_observations(
+            victim_model,
+            _loader(args, "val", catalog.names, exclude_sample_ids=excluded_sample_ids),
+            observations / "val",
+            device, catalog.num_classes, "oracle", max_samples=args.max_val_samples,
+        )
+        print("[2/4] Collecting victim observations with gradient-inferred labels...")
+        test_manifest = collect_observations(
+            victim_model,
+            _loader(
+                args,
+                evaluation_split,
+                catalog.names,
+                include_sample_ids=evaluation_sample_ids,
+            ),
+            observations / "test",
+            device, catalog.num_classes, args.victim_label_mode, predictor=predictor,
+            max_samples=args.max_test_samples,
+        )
     train_dataset = ObservationDataset(train_manifest)
     validation_dataset = ObservationDataset(validation_manifest)
     test_dataset = ObservationDataset(test_manifest)
+    if excluded_sample_ids:
+        assert_holdouts_excluded(
+            (train_manifest, validation_manifest), excluded_sample_ids
+        )
 
     train_clones = args.train_surrogates or args.decoder_observation_source == "surrogate"
     if train_clones:
@@ -172,7 +283,19 @@ def run(args: argparse.Namespace) -> dict[str, float | int]:
                 )
             )
 
+    if condition_mode != "stored":
+        train_dataset = ConditionedObservationDataset(
+            train_dataset, condition_mode, catalog.num_classes
+        )
+        validation_dataset = ConditionedObservationDataset(
+            validation_dataset, condition_mode, catalog.num_classes
+        )
+        test_dataset = ConditionedObservationDataset(
+            test_dataset, condition_mode, catalog.num_classes
+        )
+
     sample = train_dataset[0]
+    decoder_options = resolved_decoder_options(args)
     decoder_config = DecoderConfig(
         z_channels=int(sample["smashed_z"].shape[0]),
         u_channels=int(sample["server_output_u"].shape[0]),
@@ -182,11 +305,21 @@ def run(args: argparse.Namespace) -> dict[str, float | int]:
         use_z="z" in selected,
         use_u="u" in selected,
         use_gradient="gradient" in selected,
+        signal_spatial_size=int(decoder_options["signal_spatial_size"]),
+        signal_channels=int(decoder_options["signal_channels"]),
+        label_channels=int(decoder_options["label_channels"]),
+        decoder_base_channels=int(decoder_options["decoder_base_channels"]),
+        decoder_min_channels=int(decoder_options["decoder_min_channels"]),
+        decoder_refinement_blocks=int(decoder_options["decoder_refinement_blocks"]),
     )
     decoder = LabelConditionedDecoder(decoder_config).to(device)
     training_config = DecoderTrainingConfig(
         epochs=args.decoder_epochs, batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        l1_weight=float(decoder_options["l1_weight"]),
+        ssim_weight=float(decoder_options["ssim_weight"]),
+        edge_weight=float(decoder_options["edge_weight"]),
+        perceptual_weight=float(decoder_options["perceptual_weight"]),
     )
     print("[3/4] Training the label-conditioned decoder...")
     decoder_checkpoint, _ = train_decoder(
@@ -197,6 +330,8 @@ def run(args: argparse.Namespace) -> dict[str, float | int]:
     summary = evaluate_reconstructions(
         decoder, test_dataset, victim_model, output / "evaluation", device,
         batch_size=args.batch_size, class_names=catalog.names,
+        max_grid_images=getattr(args, "max_grid_images", 12),
+        save_separate_images=getattr(args, "save_separate_images", True),
     )
     run_config = vars(args).copy()
     run_config.update({
@@ -220,3 +355,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+__all__ = [
+    "DECODER_PRESETS",
+    "build_parser",
+    "resolved_decoder_options",
+    "run",
+]

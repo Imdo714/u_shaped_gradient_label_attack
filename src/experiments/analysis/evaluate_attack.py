@@ -7,11 +7,11 @@ from pathlib import Path
 
 import numpy as np
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from .attacks.gradient_features import load_gradient_dataset
-from ..shared.data.class_catalog import ClassCatalog
-from ..shared.evaluation.clustering_metrics import evaluate_clusters
-from ..shared.evaluation.visualization import plot_confusion, plot_pca
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ..attacks.gradient_features import load_gradient_dataset
+from ...shared.data.class_catalog import ClassCatalog
+from ...shared.evaluation.clustering_metrics import evaluate_clusters
+from ...shared.evaluation.visualization import plot_confusion, plot_pca
 
 
 METRIC_LABELS = {

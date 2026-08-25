@@ -21,12 +21,14 @@ def evaluate_reconstructions(
     batch_size: int = 8,
     max_grid_images: int = 12,
     class_names: tuple[str, ...] | None = None,
+    save_separate_images: bool = True,
 ) -> dict[str, float | int]:
     output = Path(output_dir)
     comparison_writer = ReconstructionComparisonWriter(
         output,
         class_names or (),
         max_grid_images=max_grid_images,
+        save_separate_images=save_separate_images,
     )
     loader = DataLoader(dataset, batch_size=batch_size)
     decoder.eval()

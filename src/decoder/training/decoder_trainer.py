@@ -19,6 +19,10 @@ class DecoderTrainingConfig:
     batch_size: int = 8
     learning_rate: float = 1e-3
     weight_decay: float = 1e-5
+    l1_weight: float = 1.0
+    ssim_weight: float = 0.5
+    edge_weight: float = 0.0
+    perceptual_weight: float = 0.0
 
 
 def _forward(model: LabelConditionedDecoder, batch: dict, device: torch.device):
@@ -39,7 +43,7 @@ def _epoch(
 ) -> dict[str, float]:
     training = optimizer is not None
     model.train(training)
-    totals = {"loss": 0.0, "l1": 0.0, "ssim": 0.0}
+    totals: dict[str, float] = {}
     samples = 0
     for batch in loader:
         target = batch["target_image"].to(device)
@@ -52,8 +56,8 @@ def _epoch(
                 loss.backward()
                 optimizer.step()
         batch_size = target.shape[0]
-        for key in totals:
-            totals[key] += metrics[key] * batch_size
+        for key, value in metrics.items():
+            totals[key] = totals.get(key, 0.0) + value * batch_size
         samples += batch_size
     if samples == 0:
         raise ValueError("observation dataset is empty")
@@ -72,7 +76,12 @@ def train_decoder(
     output.mkdir(parents=True, exist_ok=True)
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     validation_loader = DataLoader(validation_dataset, batch_size=config.batch_size)
-    loss_function = ReconstructionLoss()
+    loss_function = ReconstructionLoss(
+        l1_weight=config.l1_weight,
+        ssim_weight=config.ssim_weight,
+        edge_weight=config.edge_weight,
+        perceptual_weight=config.perceptual_weight,
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )

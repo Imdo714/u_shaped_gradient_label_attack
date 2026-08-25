@@ -9,13 +9,16 @@ class SignalEncoder(nn.Module):
 
     def __init__(self, in_channels: int, out_channels: int, spatial_size: int = 8) -> None:
         super().__init__()
+        groups = min(4, out_channels)
+        while out_channels % groups:
+            groups -= 1
         self.spatial_size = spatial_size
         self.network = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=1),
-            nn.GroupNorm(4, out_channels),
+            nn.GroupNorm(groups, out_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.GroupNorm(4, out_channels),
+            nn.GroupNorm(groups, out_channels),
             nn.ReLU(inplace=True),
         )
 

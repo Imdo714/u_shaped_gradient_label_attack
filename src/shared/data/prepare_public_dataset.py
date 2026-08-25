@@ -102,10 +102,23 @@ def merge_manifest(
     return merged
 
 
-def destination_plan(project_root: Path, selected: dict[str, list[str]]):
+def destination_plan(
+    project_root: Path,
+    selected: dict[str, list[str]],
+    train_count: int = 30,
+    val_count: int = 10,
+    test_count: int = 10,
+):
     workspace = WorkspacePaths(project_root / DEFAULT_WORKSPACE_PATHS.root)
     rows: list[dict[str, str]] = []
-    split_ranges = (("train", 0, 30), ("val", 30, 40), ("test", 40, 50))
+    train_end = train_count
+    val_end = train_end + val_count
+    test_end = val_end + test_count
+    split_ranges = (
+        ("train", 0, train_end),
+        ("val", train_end, val_end),
+        ("test", val_end, test_end),
+    )
     for label, paths in selected.items():
         for split, start, end in split_ranges:
             for source_name in paths[start:end]:
@@ -122,14 +135,39 @@ def destination_plan(project_root: Path, selected: dict[str, list[str]]):
         anchor_destination = workspace.anchors / label / f"{label}_anchor.jpg"
         rows.append(
             {
-                "source_file": paths[50],
-                "source_url": f"{RAW_ROOT}/{paths[50]}",
+                "source_file": paths[test_end],
+                "source_url": f"{RAW_ROOT}/{paths[test_end]}",
                 "split": "anchor",
                 "label": label,
                 "destination": anchor_destination.relative_to(project_root).as_posix(),
             }
         )
     return rows
+
+
+def prune_existing_files(
+    project_root: Path,
+    plan: list[dict[str, str]],
+    labels: tuple[str, ...],
+) -> int:
+    """Delete obsolete files only inside requested class/split directories."""
+    workspace = WorkspacePaths(project_root / DEFAULT_WORKSPACE_PATHS.root)
+    desired = {(project_root / row["destination"]).resolve() for row in plan}
+    roots = [
+        workspace.dataset / split / label
+        for split in ("train", "val", "test")
+        for label in labels
+    ]
+    roots.extend(workspace.anchors / label for label in labels)
+    removed = 0
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.iterdir():
+            if path.is_file() and path.resolve() not in desired:
+                path.unlink()
+                removed += 1
+    return removed
 
 
 def download_one(project_root: Path, row: dict[str, str], force: bool) -> dict[str, str]:
@@ -171,6 +209,14 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--train-count", type=int, default=30)
+    parser.add_argument("--val-count", type=int, default=10)
+    parser.add_argument("--test-count", type=int, default=10)
+    parser.add_argument(
+        "--prune-existing",
+        action="store_true",
+        help="Remove obsolete files from the requested class/split directories.",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
@@ -182,12 +228,23 @@ def main() -> None:
     unknown = sorted(set(requested) - set(definitions))
     if unknown:
         parser.error(f"unknown labels: {unknown}; configured labels are {tuple(definitions)}")
+    counts = (args.train_count, args.val_count, args.test_count)
+    if any(count < 0 for count in counts) or sum(counts) < 1:
+        parser.error("split counts must be non-negative and sum to at least one")
+    required_count = sum(counts) + 1
     selected = select_samples(
         load_public_image_paths(),
         {name: definitions[name] for name in requested},
         args.seed,
+        count=required_count,
     )
-    plan = destination_plan(project_root, selected)
+    plan = destination_plan(
+        project_root,
+        selected,
+        train_count=args.train_count,
+        val_count=args.val_count,
+        test_count=args.test_count,
+    )
     completed: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = [executor.submit(download_one, project_root, row, args.force) for row in plan]
@@ -195,6 +252,9 @@ def main() -> None:
             completed.append(future.result())
             if index % 10 == 0 or index == len(futures):
                 print(f"Verified: {index}/{len(futures)}")
+    if args.prune_existing:
+        removed = prune_existing_files(project_root, plan, requested)
+        print(f"Pruned obsolete files: {removed}")
     workspace = WorkspacePaths(project_root / DEFAULT_WORKSPACE_PATHS.root)
     manifest = workspace.dataset / "public_subset_manifest.csv"
     completed = merge_manifest(manifest, completed, set(requested))

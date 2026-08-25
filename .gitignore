@@ -20,3 +20,50 @@ workspace/data/**/*.part
 *.ckpt
 *.npz
 *.npy
+
+# Local secrets and machine-specific environment configuration.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and operating-system metadata.
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python tooling, coverage, notebooks, and packaging outputs.
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+build/
+dist/
+*.egg-info/
+
+# Logs and external ML experiment trackers.
+*.log
+wandb/
+lightning_logs/
+mlruns/
+
+# Other large model/export formats and temporary dataset archives.
+*.onnx
+*.safetensors
+*.h5
+*.hdf5
+*.pkl
+*.joblib
+workspace/data/**/*.zip
+workspace/data/**/*.tar
+workspace/data/**/*.tar.gz

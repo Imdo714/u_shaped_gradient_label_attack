@@ -8,10 +8,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from ..shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
-from ..shared.data.class_catalog import checkpoint_class_catalog
-from ..shared.data.image_dataset import load_image
-from ..split_learning.architecture.split_learning_model import (
+from ...shared.configuration.workspace_paths import DEFAULT_WORKSPACE_PATHS
+from ...shared.data.class_catalog import checkpoint_class_catalog
+from ...shared.data.image_dataset import load_image
+from ...split_learning.architecture.split_learning_model import (
     SplitLearningModel,
     load_split_learning_model,
 )
