@@ -27,7 +27,13 @@ def test_src_contains_only_the_runtime_packages():
         for path in SOURCE_ROOT.iterdir()
         if path.is_dir() and path.name != "__pycache__"
     }
-    assert packages == {"split_learning", "shared", "experiments", "decoder"}
+    assert packages == {
+        "split_learning",
+        "shared",
+        "experiments",
+        "decoder",
+        "transcript_inversion",
+    }
 
 
 def test_non_source_files_are_grouped_by_role():
@@ -47,8 +53,12 @@ def test_dependency_direction_respects_package_responsibilities():
     shared_imports = imported_modules("shared")
     split_learning_imports = imported_modules("split_learning")
     decoder_imports = imported_modules("decoder")
+    transcript_inversion_imports = imported_modules("transcript_inversion")
 
     assert not any(module.startswith("src.split_learning") for module in shared_imports)
     assert not any(module.startswith("src.experiments") for module in shared_imports)
     assert not any(module.startswith("src.experiments") for module in split_learning_imports)
     assert not any(module.startswith("src.experiments") for module in decoder_imports)
+    assert not any(
+        module.startswith("src.experiments") for module in transcript_inversion_imports
+    )
