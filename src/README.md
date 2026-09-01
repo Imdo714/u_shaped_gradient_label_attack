@@ -47,6 +47,26 @@ decoder/
 └─ pipeline/             end-to-end 복원 실험 조립
 ```
 
+## client_received_transcript_attack
+
+`client_received_transcript_attack/`는 동일 클라이언트가 서버로부터 받는 `u`와
+`dL/dz`만 사용하여 공개 데이터로 공격 decoder를 학습하고 unseen holdout을
+평가합니다. 공격 decoder는 Split Learning 내부 레이어 대신 관찰된 tensor shape만
+사용합니다. Local provider는 고정 checkpoint에서 정확한 transcript를 만드는
+기준선이고, RPC pipeline은 서버, 정상 client, passive proxy, 공격 학습기와
+evaluator를 별도 process로 실행합니다. RPC 공격 학습 process에는 Victim checkpoint가
+전달되지 않습니다.
+
+```text
+client_received_transcript_attack/
+├─ data/          u와 dL/dz 수집, 공격자 record와 평가 원본 분리
+├─ models/        독립 u/gradient encoder와 image decoder
+├─ training/      공개 원본 reconstruction loss를 이용한 end-to-end 학습
+├─ evaluation/    holdout 지표와 비교 이미지 생성
+├─ rpc/           역할 checkpoint, 안전한 TCP protocol, server/client/proxy
+└─ pipeline/      local-exact 및 process-separated RPC 실험 조립
+```
+
 ## workspace
 
 `workspace/`는 기본 경로는 shared/configuration/workspace_paths.py에서 한 번만 정의합니다.

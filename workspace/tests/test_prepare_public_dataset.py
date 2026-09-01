@@ -4,6 +4,10 @@ from src.shared.data.prepare_public_dataset import (
     destination_plan,
     prune_existing_files,
 )
+from src.shared.data.prepare_new_holdouts import (
+    balanced_label_counts,
+    select_new_holdout_paths,
+)
 
 
 def test_destination_plan_uses_split_specific_counts_and_one_anchor(tmp_path):
@@ -42,3 +46,24 @@ def test_prune_existing_removes_only_obsolete_requested_class_files(tmp_path):
     assert keep.is_file()
     assert not obsolete.exists()
     assert unrelated.is_file()
+
+
+def test_new_holdouts_are_balanced_and_exclude_existing_sources():
+    paths = [
+        *(f"Cat_{index}.jpg" for index in range(6)),
+        *(f"Dog_{index}.jpg" for index in range(6)),
+    ]
+    selected = select_new_holdout_paths(
+        paths,
+        {"cat": ("Cat",), "dog": ("Dog",)},
+        {"Cat_0.jpg", "Dog_0.jpg"},
+        total=5,
+        seed=42,
+    )
+
+    assert balanced_label_counts(("cat", "dog"), 5) == {"cat": 3, "dog": 2}
+    assert {label: len(items) for label, items in selected.items()} == {
+        "cat": 3,
+        "dog": 2,
+    }
+    assert not ({"Cat_0.jpg", "Dog_0.jpg"} & set().union(*selected.values()))

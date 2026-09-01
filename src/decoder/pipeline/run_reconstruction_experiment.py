@@ -57,7 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="inferred-soft",
     )
     parser.add_argument(
-        "--signals", default="z,u,gradient", help="Comma-separated: z,u,gradient"
+        "--signals",
+        default="z,u,gradient",
+        help="Comma-separated: z,u,gradient(or grad_u),grad_z",
     )
     parser.add_argument("--train-surrogates", action="store_true")
     parser.add_argument(
@@ -104,9 +106,12 @@ def _device(name: str) -> torch.device:
 
 def _signal_selection(value: str) -> set[str]:
     selected = {part.strip() for part in value.split(",") if part.strip()}
-    allowed = {"z", "u", "gradient"}
+    allowed = {"z", "u", "gradient", "grad_u", "grad_z"}
     if not selected or not selected.issubset(allowed):
         raise ValueError(f"--signals must contain one or more of {sorted(allowed)}")
+    if "gradient" in selected:
+        selected.remove("gradient")
+        selected.add("grad_u")
     return selected
 
 
@@ -295,6 +300,11 @@ def run(
         )
 
     sample = train_dataset[0]
+    if "grad_z" in selected and not bool(sample["has_grad_g_to_f"]):
+        raise ValueError(
+            "--signals includes grad_z, but the observation records have no dL/dz. "
+            "Recollect observations with the current decoder pipeline."
+        )
     decoder_options = resolved_decoder_options(args)
     decoder_config = DecoderConfig(
         z_channels=int(sample["smashed_z"].shape[0]),
@@ -304,7 +314,8 @@ def run(
         image_size=args.image_size,
         use_z="z" in selected,
         use_u="u" in selected,
-        use_gradient="gradient" in selected,
+        use_gradient="grad_u" in selected,
+        use_grad_z="grad_z" in selected,
         signal_spatial_size=int(decoder_options["signal_spatial_size"]),
         signal_channels=int(decoder_options["signal_channels"]),
         label_channels=int(decoder_options["label_channels"]),

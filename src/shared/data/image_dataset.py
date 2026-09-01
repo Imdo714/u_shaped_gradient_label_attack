@@ -58,7 +58,11 @@ def make_loader(
     root = Path(data_dir) / split
     if not root.exists():
         raise FileNotFoundError(f"Dataset split not found: {root}")
-    dataset = ImageFolderWithID(root, transform=image_transform(image_size, augment))
+    dataset = ImageFolderWithID(
+        root,
+        transform=image_transform(image_size, augment),
+        allow_empty=True,
+    )
     if class_names is not None:
         validate_class_mapping(dataset, class_names)
     selected_indices = [

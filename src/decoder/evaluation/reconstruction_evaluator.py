@@ -40,6 +40,7 @@ def evaluate_reconstructions(
                 batch["smashed_z"].to(device),
                 batch["server_output_u"].to(device),
                 batch["grad_h_to_g"].to(device),
+                batch["grad_g_to_f"].to(device),
                 batch["label_condition"].to(device),
             )
             target = batch["target_image"].to(device)

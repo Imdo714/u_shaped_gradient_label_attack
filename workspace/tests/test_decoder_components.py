@@ -27,6 +27,7 @@ def test_label_conditioned_decoder_combines_all_observations():
         torch.randn(2, 32, 16, 16),
         torch.randn(2, 64, 8, 8),
         torch.randn(2, 64, 8, 8),
+        torch.randn(2, 32, 16, 16),
         torch.tensor([[1.0, 0.0, 0.0], [0.1, 0.7, 0.2]]),
     )
     assert output.shape == (2, 3, 64, 64)
@@ -98,9 +99,37 @@ def test_strong_decoder_configuration_forwards():
         torch.randn(1, 32, 16, 16),
         torch.randn(1, 64, 8, 8),
         torch.randn(1, 64, 8, 8),
+        torch.randn(1, 32, 16, 16),
         torch.tensor([[0.2, 0.7, 0.1]]),
     )
     assert output.shape == (1, 3, 64, 64)
+
+
+def test_decoder_supports_u_and_grad_z_only():
+    config = DecoderConfig(
+        z_channels=32,
+        u_channels=64,
+        gradient_channels=64,
+        num_classes=3,
+        image_size=64,
+        use_z=False,
+        use_u=True,
+        use_gradient=False,
+        use_grad_z=True,
+    )
+    model = LabelConditionedDecoder(config)
+    output = model(
+        torch.randn(2, 32, 16, 16),
+        torch.randn(2, 64, 8, 8),
+        torch.randn(2, 64, 8, 8),
+        torch.randn(2, 32, 16, 16),
+        torch.tensor([[1.0, 0.0, 0.0], [0.1, 0.7, 0.2]]),
+    )
+    assert output.shape == (2, 3, 64, 64)
+    assert model.z_encoder is None
+    assert model.gradient_encoder is None
+    assert model.u_encoder is not None
+    assert model.grad_z_encoder is not None
 
 
 def test_edge_and_perceptual_losses_are_reported():

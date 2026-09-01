@@ -22,7 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--holdout-label", required=True)
     parser.add_argument(
-        "--holdout-split", choices=("train", "val", "test"), default="test"
+        "--holdout-split",
+        choices=("train", "val", "test", "new_holdout"),
+        default="test",
     )
     parser.add_argument("--holdout-index", type=int, default=0)
     parser.set_defaults(decoder_preset="strong")

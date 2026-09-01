@@ -36,7 +36,7 @@ def select_holdout_records(
         raise ValueError(f"unknown holdout labels: {unknown}")
 
     root = Path(data_dir) / split
-    dataset = ImageFolderWithID(root)
+    dataset = ImageFolderWithID(root, allow_empty=True)
     validate_class_mapping(dataset, class_names)
     by_label: dict[str, list[int]] = {label: [] for label in selected_labels}
     for dataset_index, (_, label_index) in enumerate(dataset.samples):

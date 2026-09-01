@@ -19,6 +19,7 @@ class DecoderConfig:
     use_z: bool = True
     use_u: bool = True
     use_gradient: bool = True
+    use_grad_z: bool = False
     signal_spatial_size: int = 8
     signal_channels: int = 32
     label_channels: int = 16
@@ -63,11 +64,11 @@ class _RefinementBlock(nn.Module):
 
 
 class LabelConditionedDecoder(nn.Module):
-    """Reconstruct an image from z, u, dL/du and a hard or soft label."""
+    """Reconstruct an image from z, u, dL/du, dL/dz and a label condition."""
 
     def __init__(self, config: DecoderConfig) -> None:
         super().__init__()
-        if not any((config.use_z, config.use_u, config.use_gradient)):
+        if not any((config.use_z, config.use_u, config.use_gradient, config.use_grad_z)):
             raise ValueError("at least one observed signal must be enabled")
         if config.signal_spatial_size < 1:
             raise ValueError("signal_spatial_size must be positive")
@@ -102,10 +103,17 @@ class LabelConditionedDecoder(nn.Module):
             if config.use_gradient
             else None
         )
+        self.grad_z_encoder = (
+            SignalEncoder(config.z_channels, config.signal_channels, config.signal_spatial_size)
+            if config.use_grad_z
+            else None
+        )
         self.label_encoder = nn.Sequential(
             nn.Linear(config.num_classes, config.label_channels), nn.ReLU(inplace=True)
         )
-        signal_count = sum((config.use_z, config.use_u, config.use_gradient))
+        signal_count = sum(
+            (config.use_z, config.use_u, config.use_gradient, config.use_grad_z)
+        )
         channels = signal_count * config.signal_channels + config.label_channels
         base_groups = min(8, config.decoder_base_channels)
         while config.decoder_base_channels % base_groups:
@@ -134,6 +142,7 @@ class LabelConditionedDecoder(nn.Module):
         smashed_z: Tensor,
         server_output_u: Tensor,
         grad_h_to_g: Tensor,
+        grad_g_to_f: Tensor,
         label_condition: Tensor,
     ) -> Tensor:
         features: list[Tensor] = []
@@ -143,6 +152,8 @@ class LabelConditionedDecoder(nn.Module):
             features.append(self.u_encoder(server_output_u))
         if self.gradient_encoder is not None:
             features.append(self.gradient_encoder(l2_normalize_gradient(grad_h_to_g)))
+        if self.grad_z_encoder is not None:
+            features.append(self.grad_z_encoder(l2_normalize_gradient(grad_g_to_f)))
         label = self.label_encoder(label_condition).unsqueeze(-1).unsqueeze(-1)
         label = label.expand(
             -1, -1, self.config.signal_spatial_size, self.config.signal_spatial_size

@@ -75,6 +75,7 @@ def collect_observations(
                 smashed_z=result.smashed_z[0].cpu().numpy(),
                 server_output_u=result.server_output_u[0].cpu().numpy(),
                 grad_h_to_g=result.grad_h_to_g[0].cpu().numpy(),
+                grad_g_to_f=result.grad_g_to_f[0].cpu().numpy(),
                 label_condition=condition.cpu().numpy(),
                 predicted_label=np.int64(predicted_label),
                 confidence=np.float32(confidence),
@@ -121,11 +122,19 @@ class ObservationDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, Tensor | str]:
         row = self.rows[index]
         with np.load(self.root / row["attacker_record"]) as record:
+            has_grad_g_to_f = "grad_g_to_f" in record.files
+            smashed_z = torch.from_numpy(record["smashed_z"]).float()
             item: dict[str, Tensor | str] = {
                 "sample_id": row["sample_id"],
-                "smashed_z": torch.from_numpy(record["smashed_z"]).float(),
+                "smashed_z": smashed_z,
                 "server_output_u": torch.from_numpy(record["server_output_u"]).float(),
                 "grad_h_to_g": torch.from_numpy(record["grad_h_to_g"]).float(),
+                "grad_g_to_f": (
+                    torch.from_numpy(record["grad_g_to_f"]).float()
+                    if has_grad_g_to_f
+                    else torch.zeros_like(smashed_z)
+                ),
+                "has_grad_g_to_f": torch.tensor(has_grad_g_to_f),
                 "label_condition": torch.from_numpy(record["label_condition"]).float(),
                 "predicted_label": torch.tensor(int(record["predicted_label"])),
                 "confidence": torch.tensor(float(record["confidence"])),
@@ -195,6 +204,9 @@ def collect_surrogate_observations(
         u = u_server.detach().requires_grad_(True)
         loss = criterion(surrogate_h(u), true_label)
         gradient = torch.autograd.grad(loss, u)[0]
+        grad_g_to_f = torch.autograd.grad(
+            u_server, z, grad_outputs=gradient
+        )[0]
         label = int(true_label.item())
         condition = _one_hot(label, num_classes)
         name = f"{sample_id}.npz"
@@ -203,6 +215,7 @@ def collect_surrogate_observations(
             smashed_z=z[0].detach().cpu().numpy(),
             server_output_u=u[0].detach().cpu().numpy(),
             grad_h_to_g=gradient[0].detach().cpu().numpy(),
+            grad_g_to_f=grad_g_to_f[0].detach().cpu().numpy(),
             label_condition=condition.numpy(),
             predicted_label=np.int64(label),
             confidence=np.float32(1.0),
