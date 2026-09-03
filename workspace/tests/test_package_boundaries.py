@@ -35,6 +35,7 @@ def test_src_contains_only_the_runtime_packages():
         "transcript_inversion",
         "client_received_transcript_attack",
         "client_received_transcript_refiner",
+        "shared_server_gradient_transcript_inversion",
     }
 
 

@@ -87,6 +87,13 @@ client_received_transcript_refiner/
 └─ pipeline/      OOF 생성, 정제기 학습 및 unseen holdout 평가 CLI
 ```
 
+## shared_server_gradient_transcript_inversion
+
+`shared_server_gradient_transcript_inversion/`은 동일한 서버 `g`를 공유하는 1:N
+환경에서 A(`u`), B(`dL/dz`), C(`u+dL/dz`), D(`z+u+dL/dz`) ablation과
+클라이언트 간 공격 전이 행렬을 실행합니다. 자세한 명령은 해당 폴더의
+`README.md`를 참고합니다.
+
 ## workspace
 
 `workspace/`는 기본 경로는 shared/configuration/workspace_paths.py에서 한 번만 정의합니다.
