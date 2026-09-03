@@ -140,11 +140,20 @@ def test_edge_and_perceptual_losses_are_reported():
         ssim_weight=0.75,
         edge_weight=0.15,
         perceptual_weight=0.25,
+        laplacian_weight=0.2,
     )
     loss, metrics = loss_function(reconstruction, target)
-    assert set(metrics) == {"loss", "l1", "ssim", "edge", "perceptual"}
+    assert set(metrics) == {
+        "loss",
+        "l1",
+        "ssim",
+        "edge",
+        "perceptual",
+        "laplacian",
+    }
     assert metrics["edge"] >= 0.0
     assert metrics["perceptual"] >= 0.0
+    assert metrics["laplacian"] >= 0.0
     loss.backward()
     assert reconstruction.grad is not None
 

@@ -70,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ssim-weight", type=float, default=0.75)
     parser.add_argument("--edge-weight", type=float, default=0.15)
     parser.add_argument("--perceptual-weight", type=float, default=0.25)
+    parser.add_argument("--laplacian-weight", type=float, default=0.0)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--max-grid-images", type=int, default=20)
@@ -264,6 +265,7 @@ def run(args: argparse.Namespace) -> dict[str, float | int | bool]:
         ssim_weight=args.ssim_weight,
         edge_weight=args.edge_weight,
         perceptual_weight=args.perceptual_weight,
+        laplacian_weight=args.laplacian_weight,
         classification_weight=args.classification_weight,
         gradient_clip_norm=args.gradient_clip_norm,
         num_workers=args.num_workers,

@@ -9,6 +9,7 @@ from torch.utils.data import Dataset
 
 
 ATTACKER_KEYS = {"server_output_u", "grad_g_to_f"}
+ATTACKER_KEYS_WITH_Z = ATTACKER_KEYS | {"smashed_z"}
 EVALUATOR_KEYS = {"target_image", "true_label"}
 
 
@@ -66,16 +67,19 @@ class ClientReceivedTranscriptDataset(Dataset):
         )
         with np.load(attacker_path, allow_pickle=False) as record:
             keys = set(record.files)
-            if keys != ATTACKER_KEYS:
+            if keys not in (ATTACKER_KEYS, ATTACKER_KEYS_WITH_Z):
                 raise ValueError(
                     f"attacker record {attacker_path} has keys {sorted(keys)}; "
-                    f"expected only {sorted(ATTACKER_KEYS)}"
+                    f"expected {sorted(ATTACKER_KEYS)} or "
+                    f"{sorted(ATTACKER_KEYS_WITH_Z)}"
                 )
             item: dict[str, torch.Tensor | str] = {
                 "transcript_id": row["transcript_id"],
                 "server_output_u": torch.from_numpy(record["server_output_u"]).float(),
                 "grad_g_to_f": torch.from_numpy(record["grad_g_to_f"]).float(),
             }
+            if "smashed_z" in record:
+                item["smashed_z"] = torch.from_numpy(record["smashed_z"]).float()
         if self.evaluator_manifest is not None:
             target_path = _safe_record_path(
                 self.evaluator_manifest.parent, row["evaluator_target"]
@@ -94,6 +98,7 @@ class ClientReceivedTranscriptDataset(Dataset):
 
 __all__ = [
     "ATTACKER_KEYS",
+    "ATTACKER_KEYS_WITH_Z",
     "EVALUATOR_KEYS",
     "ClientReceivedTranscriptDataset",
 ]

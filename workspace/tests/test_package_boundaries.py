@@ -34,6 +34,7 @@ def test_src_contains_only_the_runtime_packages():
         "decoder",
         "transcript_inversion",
         "client_received_transcript_attack",
+        "client_received_transcript_refiner",
     }
 
 
@@ -56,6 +57,7 @@ def test_dependency_direction_respects_package_responsibilities():
     decoder_imports = imported_modules("decoder")
     transcript_inversion_imports = imported_modules("transcript_inversion")
     client_received_imports = imported_modules("client_received_transcript_attack")
+    refiner_imports = imported_modules("client_received_transcript_refiner")
 
     assert not any(module.startswith("src.split_learning") for module in shared_imports)
     assert not any(module.startswith("src.experiments") for module in shared_imports)
@@ -67,3 +69,4 @@ def test_dependency_direction_respects_package_responsibilities():
     assert not any(
         module.startswith("src.experiments") for module in client_received_imports
     )
+    assert not any(module.startswith("src.experiments") for module in refiner_imports)

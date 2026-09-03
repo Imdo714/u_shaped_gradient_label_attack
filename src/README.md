@@ -60,11 +60,31 @@ evaluator를 별도 process로 실행합니다. RPC 공격 학습 process에는 
 ```text
 client_received_transcript_attack/
 ├─ data/          u와 dL/dz 수집, 공격자 record와 평가 원본 분리
-├─ models/        독립 u/gradient encoder와 image decoder
+├─ models/        bilinear baseline과 multi-scale PixelShuffle decoder
 ├─ training/      공개 원본 reconstruction loss를 이용한 end-to-end 학습
-├─ evaluation/    holdout 지표와 비교 이미지 생성
+├─ evaluation/    holdout 지표, 고정 후처리 및 v1/v2 비교 이미지
 ├─ rpc/           역할 checkpoint, 안전한 TCP protocol, server/client/proxy
 └─ pipeline/      local-exact 및 process-separated RPC 실험 조립
+```
+
+## client_received_transcript_refiner
+
+`client_received_transcript_refiner/`는 고정된 공격 decoder가 만든 개별 coarse
+복원 이미지를 공개 auxiliary 원본과 비교하여 image-only Residual U-Net을 학습합니다.
+피해 holdout은 마지막 평가에서만 사용하며, 학습 및 검증 transcript ID와 평가 ID가
+겹치면 기본적으로 실행을 중단합니다.
+
+추가 OOF pipeline은 공개 train을 fold로 분리하여 각 샘플을 자신을 보지 않은 decoder로
+복원하고, transcript-conditioned refiner는 이 coarse 영상과 raw `u`, `dL/dz`를 함께
+사용합니다. 검증 기준선보다 개선되지 않은 모델은 선택하지 않습니다.
+
+```text
+client_received_transcript_refiner/
+├─ data/          OOF coarse와 원래 transcript/target 결합
+├─ models/        변화량이 제한된 Residual U-Net
+├─ training/      image-only 및 transcript-conditioned 정제기 학습
+├─ evaluation/    Original/Coarse/Refined 지표와 비교 이미지
+└─ pipeline/      OOF 생성, 정제기 학습 및 unseen holdout 평가 CLI
 ```
 
 ## workspace

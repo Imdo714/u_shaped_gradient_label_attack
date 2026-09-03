@@ -8,7 +8,7 @@ import torch
 
 from ..data.dataset import ClientReceivedTranscriptDataset
 from ..evaluation.evaluator import evaluate_client_received_decoder
-from ..models.decoder import ClientReceivedDecoder, ClientReceivedDecoderConfig
+from ..models.factory import load_decoder_checkpoint
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,12 +34,10 @@ def _device(name: str) -> torch.device:
 
 def run(args: argparse.Namespace) -> dict[str, float | int | bool]:
     device = _device(args.device)
-    checkpoint = torch.load(args.decoder_checkpoint, map_location=device, weights_only=False)
-    config = ClientReceivedDecoderConfig(**checkpoint["decoder_config"])
+    decoder, checkpoint = load_decoder_checkpoint(args.decoder_checkpoint, device)
+    config = decoder.config
     if config.num_classes != len(args.class_names):
         raise ValueError("decoder class count does not match --class-names")
-    decoder = ClientReceivedDecoder(config).to(device)
-    decoder.load_state_dict(checkpoint["model"])
     dataset = ClientReceivedTranscriptDataset(
         args.attacker_manifest, args.evaluator_manifest
     )

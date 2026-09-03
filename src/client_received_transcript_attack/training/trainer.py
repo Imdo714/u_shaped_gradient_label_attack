@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
 from ...decoder.losses.reconstruction_loss import ReconstructionLoss
-from ..models.decoder import ClientReceivedDecoder
+from ..models.factory import DecoderModel
 
 
 @dataclass(frozen=True)
@@ -23,9 +23,13 @@ class AttackTrainingConfig:
     ssim_weight: float = 0.75
     edge_weight: float = 0.15
     perceptual_weight: float = 0.25
+    laplacian_weight: float = 0.0
     classification_weight: float = 0.1
     gradient_clip_norm: float = 5.0
     num_workers: int = 0
+    early_stopping_patience: int = 0
+    early_stopping_min_delta: float = 0.0
+    preserve_initial_state: bool = False
 
 
 def _to_device(batch: dict, key: str, device: torch.device) -> Tensor:
@@ -36,7 +40,7 @@ def _to_device(batch: dict, key: str, device: torch.device) -> Tensor:
 
 
 def _run_epoch(
-    model: ClientReceivedDecoder,
+    model: DecoderModel,
     loader: DataLoader,
     reconstruction_loss: ReconstructionLoss,
     classification_loss: nn.Module,
@@ -55,6 +59,7 @@ def _run_epoch(
         "ssim": 0.0,
         "edge": 0.0,
         "perceptual": 0.0,
+        "laplacian": 0.0,
         "label_correct": 0.0,
         "label_samples": 0.0,
     }
@@ -65,10 +70,16 @@ def _run_epoch(
         if optimizer is not None:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(training):
-            reconstruction, label_logits = model(
-                _to_device(batch, "server_output_u", device),
-                _to_device(batch, "grad_g_to_f", device),
-            )
+            u = _to_device(batch, "server_output_u", device)
+            grad_z = _to_device(batch, "grad_g_to_f", device)
+            if getattr(model.config, "z_channels", None) is not None:
+                reconstruction, label_logits = model(
+                    u,
+                    grad_z,
+                    _to_device(batch, "smashed_z", device),
+                )
+            else:
+                reconstruction, label_logits = model(u, grad_z)
             reconstruction_total, reconstruction_metrics = reconstruction_loss(
                 reconstruction, target
             )
@@ -87,7 +98,7 @@ def _run_epoch(
         totals["loss"] += float(total.detach()) * batch_size
         totals["reconstruction_loss"] += float(reconstruction_total.detach()) * batch_size
         totals["classification_loss"] += float(label_total.detach()) * batch_size
-        for key in ("l1", "ssim", "edge", "perceptual"):
+        for key in ("l1", "ssim", "edge", "perceptual", "laplacian"):
             totals[key] += float(reconstruction_metrics[key]) * batch_size
         if label_logits is not None:
             totals["label_correct"] += float(
@@ -108,7 +119,7 @@ def _run_epoch(
 
 
 def train_client_received_decoder(
-    model: ClientReceivedDecoder,
+    model: DecoderModel,
     train_dataset,
     validation_dataset,
     output_dir: str | Path,
@@ -119,6 +130,10 @@ def train_client_received_decoder(
 
     if config.epochs < 1 or config.batch_size < 1:
         raise ValueError("epochs and batch_size must be positive")
+    if config.early_stopping_patience < 0:
+        raise ValueError("early_stopping_patience must be non-negative")
+    if config.early_stopping_min_delta < 0.0:
+        raise ValueError("early_stopping_min_delta must be non-negative")
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     train_loader = DataLoader(
@@ -137,6 +152,7 @@ def train_client_received_decoder(
         ssim_weight=config.ssim_weight,
         edge_weight=config.edge_weight,
         perceptual_weight=config.perceptual_weight,
+        laplacian_weight=config.laplacian_weight,
     )
     classification_loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
@@ -145,8 +161,29 @@ def train_client_received_decoder(
         weight_decay=config.weight_decay,
     )
     best_validation_loss = float("inf")
+    best_epoch = 0
+    epochs_without_improvement = 0
     best_state = copy.deepcopy(model.state_dict())
     history: list[dict[str, float | int]] = []
+    initial_validation_metrics: dict[str, float] | None = None
+
+    if config.preserve_initial_state:
+        initial_validation_metrics = _run_epoch(
+            model,
+            validation_loader,
+            reconstruction_loss,
+            classification_loss,
+            config.classification_weight,
+            config.gradient_clip_norm,
+            device,
+            None,
+        )
+        best_validation_loss = initial_validation_metrics["loss"]
+        print(
+            "Initial validation reference: "
+            f"loss={initial_validation_metrics['loss']:.4f}, "
+            f"ssim={initial_validation_metrics['ssim']:.4f}"
+        )
 
     for epoch in range(1, config.epochs + 1):
         train_metrics = _run_epoch(
@@ -179,18 +216,39 @@ def train_client_received_decoder(
             f"validation_loss={validation_metrics['loss']:.4f}, "
             f"validation_ssim={validation_metrics['ssim']:.4f}"
         )
-        if validation_metrics["loss"] < best_validation_loss:
+        if (
+            validation_metrics["loss"]
+            < best_validation_loss - config.early_stopping_min_delta
+        ):
             best_validation_loss = validation_metrics["loss"]
+            best_epoch = epoch
+            epochs_without_improvement = 0
             best_state = copy.deepcopy(model.state_dict())
+        else:
+            epochs_without_improvement += 1
+            if (
+                config.early_stopping_patience > 0
+                and epochs_without_improvement >= config.early_stopping_patience
+            ):
+                print(
+                    "Early stopping: "
+                    f"no validation improvement for {epochs_without_improvement} "
+                    f"epochs; restoring epoch {best_epoch}."
+                )
+                break
 
     model.load_state_dict(best_state)
     checkpoint = output / "client_received_decoder_best.pt"
     torch.save(
         {
             "model": model.state_dict(),
+            "decoder_type": getattr(model, "decoder_type", "baseline_bilinear"),
             "decoder_config": model.config.to_dict(),
             "training_config": asdict(config),
             "best_validation_loss": best_validation_loss,
+            "best_epoch": best_epoch,
+            "epochs_trained": len(history),
+            "initial_validation_metrics": initial_validation_metrics,
         },
         checkpoint,
     )

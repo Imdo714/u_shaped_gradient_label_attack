@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from ...decoder.evaluation.image_comparison_writer import ReconstructionComparisonWriter
 from ...decoder.evaluation.reconstruction_metrics import per_sample_metrics
-from ..models.decoder import ClientReceivedDecoder
+from ..models.factory import DecoderModel
 
 
 def _tensor(batch: dict, key: str, device: torch.device) -> Tensor:
@@ -21,7 +21,7 @@ def _tensor(batch: dict, key: str, device: torch.device) -> Tensor:
 
 
 def evaluate_client_received_decoder(
-    model: ClientReceivedDecoder,
+    model: DecoderModel,
     dataset,
     output_dir: str | Path,
     device: torch.device,
@@ -45,10 +45,16 @@ def evaluate_client_received_decoder(
 
     with torch.no_grad():
         for batch in loader:
-            reconstruction, label_logits = model(
-                _tensor(batch, "server_output_u", device),
-                _tensor(batch, "grad_g_to_f", device),
-            )
+            u = _tensor(batch, "server_output_u", device)
+            grad_z = _tensor(batch, "grad_g_to_f", device)
+            if getattr(model.config, "z_channels", None) is not None:
+                reconstruction, label_logits = model(
+                    u,
+                    grad_z,
+                    _tensor(batch, "smashed_z", device),
+                )
+            else:
+                reconstruction, label_logits = model(u, grad_z)
             target = _tensor(batch, "target_image", device)
             true_labels = _tensor(batch, "true_label", device)
             metrics = per_sample_metrics(reconstruction, target)

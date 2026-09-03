@@ -12,6 +12,7 @@ workspace/data/dataset/train/
 workspace/data/dataset/val/
 workspace/data/dataset/test/
 workspace/data/dataset/new_holdout/
+workspace/data/dataset_aux_10k/
 workspace/data/anchors/
 workspace/data/**/*.part
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..data.dataset import ATTACKER_KEYS
+from ..data.dataset import ATTACKER_KEYS, ATTACKER_KEYS_WITH_Z
 from .protocol import receive_message, send_message
 
 
@@ -30,6 +30,7 @@ def observe_and_relay(
     output_dir: str | Path,
     expected_samples: int | None = None,
     ready_file: str | Path | None = None,
+    capture_z: bool = False,
 ) -> Path:
     if listen_host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("the research proxy is restricted to the loopback interface")
@@ -38,6 +39,7 @@ def observe_and_relay(
     attacker_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, str]] = []
     pending_u: dict[str, np.ndarray] = {}
+    pending_z: dict[str, np.ndarray] = {}
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -56,6 +58,16 @@ def observe_and_relay(
                     client_message = receive_message(client_connection)
                 except EOFError:
                     break
+                if capture_z and client_message.message_type == "forward":
+                    if set(client_message.arrays) != {"smashed_z"}:
+                        raise ValueError("forward message has unexpected arrays")
+                    if client_message.request_id in pending_z:
+                        raise ValueError(
+                            f"duplicate z request ID: {client_message.request_id}"
+                        )
+                    pending_z[client_message.request_id] = client_message.arrays[
+                        "smashed_z"
+                    ].copy()
                 send_message(
                     server_connection,
                     client_message.message_type,
@@ -78,14 +90,24 @@ def observe_and_relay(
                     if server_message.request_id not in pending_u:
                         raise RuntimeError("dL/dz arrived without its paired u")
                     u = pending_u.pop(server_message.request_id)
+                    z = None
+                    if capture_z:
+                        if server_message.request_id not in pending_z:
+                            raise RuntimeError("dL/dz arrived without its paired z")
+                        z = pending_z.pop(server_message.request_id)
                     filename = f"{server_message.request_id}.npz"
-                    np.savez_compressed(
-                        attacker_dir / filename,
-                        server_output_u=u[0],
-                        grad_g_to_f=server_message.arrays["grad_g_to_f"][0],
+                    payload = {
+                        "server_output_u": u[0],
+                        "grad_g_to_f": server_message.arrays["grad_g_to_f"][0],
+                    }
+                    if z is not None:
+                        payload["smashed_z"] = z[0]
+                    np.savez_compressed(attacker_dir / filename, **payload)
+                    expected_keys = (
+                        ATTACKER_KEYS_WITH_Z if capture_z else ATTACKER_KEYS
                     )
                     with np.load(attacker_dir / filename, allow_pickle=False) as record:
-                        if set(record.files) != ATTACKER_KEYS:
+                        if set(record.files) != expected_keys:
                             raise RuntimeError("proxy persisted a forbidden attacker field")
                     rows.append(
                         {
@@ -107,6 +129,8 @@ def observe_and_relay(
 
     if pending_u:
         raise RuntimeError(f"unpaired u messages remain: {sorted(pending_u)}")
+    if pending_z:
+        raise RuntimeError(f"unpaired z messages remain: {sorted(pending_z)}")
     if expected_samples is not None and len(rows) != expected_samples:
         raise RuntimeError(
             f"proxy captured {len(rows)} samples, expected {expected_samples}"
@@ -123,21 +147,29 @@ def observe_and_relay(
             {
                 "pid": os.getpid(),
                 "samples": len(rows),
-                "attacker_visible_signals": ["u", "dL/dz"],
-                "persisted_attacker_keys": sorted(ATTACKER_KEYS),
-                "stored_client_to_server_payloads": False,
+                "attacker_visible_signals": (
+                    ["z", "u", "dL/dz"] if capture_z else ["u", "dL/dz"]
+                ),
+                "persisted_attacker_keys": sorted(
+                    ATTACKER_KEYS_WITH_Z if capture_z else ATTACKER_KEYS
+                ),
+                "stored_client_to_server_payloads": ["z"] if capture_z else [],
                 "loaded_victim_checkpoint": False,
             },
             handle,
             indent=2,
         )
-    print(f"Captured {len(rows)} paired u/dL-dz transcripts", flush=True)
+    signal_text = "z/u/dL-dz" if capture_z else "u/dL-dz"
+    print(f"Captured {len(rows)} paired {signal_text} transcripts", flush=True)
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Relay authorized loopback traffic and persist only server-to-client u/dL-dz."
+        description=(
+            "Relay authorized loopback traffic and persist server-to-client u/dL-dz, "
+            "optionally including client-to-server z."
+        )
     )
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=0)
@@ -146,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True)
     parser.add_argument("--expected-samples", type=int, default=None)
     parser.add_argument("--ready-file", default=None)
+    parser.add_argument("--capture-z", action="store_true")
     return parser
 
 
@@ -159,6 +192,7 @@ def main() -> None:
         args.output,
         args.expected_samples,
         args.ready_file,
+        args.capture_z,
     )
 
 

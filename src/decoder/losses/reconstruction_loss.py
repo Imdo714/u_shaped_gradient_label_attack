@@ -27,12 +27,14 @@ class ReconstructionLoss(nn.Module):
         ssim_weight: float = 0.5,
         edge_weight: float = 0.0,
         perceptual_weight: float = 0.0,
+        laplacian_weight: float = 0.0,
     ) -> None:
         super().__init__()
         self.l1_weight = l1_weight
         self.ssim_weight = ssim_weight
         self.edge_weight = edge_weight
         self.perceptual_weight = perceptual_weight
+        self.laplacian_weight = laplacian_weight
 
     @staticmethod
     def _edge_magnitude(image: Tensor) -> Tensor:
@@ -62,6 +64,30 @@ class ReconstructionLoss(nn.Module):
             current_target = functional.avg_pool2d(current_target, 2)
         return torch.stack(losses).mean()
 
+    @staticmethod
+    def _laplacian_pyramid_l1(reconstruction: Tensor, target: Tensor) -> Tensor:
+        kernel = reconstruction.new_tensor(
+            [[0.0, 1.0, 0.0], [1.0, -4.0, 1.0], [0.0, 1.0, 0.0]]
+        ).view(1, 1, 3, 3)
+        losses: list[Tensor] = []
+        current_reconstruction = reconstruction
+        current_target = target
+        for _ in range(3):
+            channels = current_reconstruction.shape[1]
+            expanded = kernel.expand(channels, 1, 3, 3)
+            reconstruction_edges = functional.conv2d(
+                current_reconstruction, expanded, padding=1, groups=channels
+            )
+            target_edges = functional.conv2d(
+                current_target, expanded, padding=1, groups=channels
+            )
+            losses.append(functional.l1_loss(reconstruction_edges, target_edges))
+            if min(current_reconstruction.shape[-2:]) < 4:
+                break
+            current_reconstruction = functional.avg_pool2d(current_reconstruction, 2)
+            current_target = functional.avg_pool2d(current_target, 2)
+        return torch.stack(losses).mean()
+
     def forward(self, reconstruction: Tensor, target: Tensor) -> tuple[Tensor, dict[str, float]]:
         l1 = torch.nn.functional.l1_loss(reconstruction, target)
         ssim_loss = 1.0 - structural_similarity(reconstruction, target)
@@ -69,11 +95,13 @@ class ReconstructionLoss(nn.Module):
             self._edge_magnitude(reconstruction), self._edge_magnitude(target)
         )
         perceptual = self._perceptual_pyramid_l1(reconstruction, target)
+        laplacian = self._laplacian_pyramid_l1(reconstruction, target)
         total = (
             self.l1_weight * l1
             + self.ssim_weight * ssim_loss
             + self.edge_weight * edge
             + self.perceptual_weight * perceptual
+            + self.laplacian_weight * laplacian
         )
         return total, {
             "loss": float(total.detach()),
@@ -81,6 +109,7 @@ class ReconstructionLoss(nn.Module):
             "ssim": float((1.0 - ssim_loss).detach()),
             "edge": float(edge.detach()),
             "perceptual": float(perceptual.detach()),
+            "laplacian": float(laplacian.detach()),
         }
 
 

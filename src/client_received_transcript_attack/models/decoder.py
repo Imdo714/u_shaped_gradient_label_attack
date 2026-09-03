@@ -28,8 +28,9 @@ class ClientReceivedDecoderConfig:
     refinement_blocks: int = 1
     use_label_head: bool = False
     label_channels: int = 32
+    z_channels: int | None = None
 
-    def to_dict(self) -> dict[str, int | bool]:
+    def to_dict(self) -> dict[str, int | bool | None]:
         return asdict(self)
 
 
@@ -86,10 +87,14 @@ class _ResidualBlock(nn.Module):
 class ClientReceivedDecoder(nn.Module):
     """Decode only server output u and server-to-client gradient dL/dz."""
 
+    decoder_type = "baseline_bilinear"
+
     def __init__(self, config: ClientReceivedDecoderConfig) -> None:
         super().__init__()
         if config.u_channels < 1 or config.grad_z_channels < 1:
             raise ValueError("observed signal channel counts must be positive")
+        if config.z_channels is not None and config.z_channels < 1:
+            raise ValueError("z_channels must be positive when z is enabled")
         if config.num_classes < 2:
             raise ValueError("num_classes must be at least two")
         if config.signal_spatial_size < 1 or config.image_size < config.signal_spatial_size:
@@ -106,9 +111,18 @@ class ClientReceivedDecoder(nn.Module):
         self.grad_z_encoder = SignalAdapter(
             config.grad_z_channels, config.signal_channels, config.signal_spatial_size
         )
+        self.z_encoder: nn.Module | None = None
+        if config.z_channels is not None:
+            self.z_encoder = SignalAdapter(
+                config.z_channels,
+                config.signal_channels,
+                config.signal_spatial_size,
+            )
         self.label_classifier: nn.Module | None = None
         self.label_encoder: nn.Module | None = None
         fusion_channels = 2 * config.signal_channels
+        if self.z_encoder is not None:
+            fusion_channels += config.signal_channels
         if config.use_label_head:
             self.label_classifier = nn.Linear(config.signal_channels, config.num_classes)
             self.label_encoder = nn.Sequential(
@@ -139,12 +153,20 @@ class ClientReceivedDecoder(nn.Module):
         )
         self.image_decoder = nn.Sequential(*layers)
 
-    def forward(
-        self, server_output_u: Tensor, grad_g_to_f: Tensor
-    ) -> tuple[Tensor, Tensor | None]:
+    def _encode_observations(
+        self,
+        server_output_u: Tensor,
+        grad_g_to_f: Tensor,
+        smashed_z: Tensor | None = None,
+    ) -> tuple[list[Tensor], Tensor, Tensor, Tensor | None]:
         u_feature = self.u_encoder(server_output_u)
         grad_feature = self.grad_z_encoder(l2_normalize_gradient(grad_g_to_f))
-        features = [u_feature, grad_feature]
+        features: list[Tensor] = []
+        if self.z_encoder is not None:
+            if smashed_z is None:
+                raise ValueError("this decoder requires the observed smashed_z tensor")
+            features.append(self.z_encoder(smashed_z))
+        features.extend((u_feature, grad_feature))
         label_logits: Tensor | None = None
         if self.label_classifier is not None and self.label_encoder is not None:
             pooled_gradient = grad_feature.mean(dim=(-2, -1))
@@ -159,12 +181,35 @@ class ClientReceivedDecoder(nn.Module):
                     self.config.signal_spatial_size,
                 )
             )
+        return features, u_feature, grad_feature, label_logits
+
+    def forward(
+        self,
+        server_output_u: Tensor,
+        grad_g_to_f: Tensor,
+        smashed_z: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
+        features, _, _, label_logits = self._encode_observations(
+            server_output_u, grad_g_to_f, smashed_z
+        )
         reconstruction = self.image_decoder(torch.cat(features, dim=1))
         return reconstruction, label_logits
+
+
+class ZUGradZDecoder(ClientReceivedDecoder):
+    """Bilinear decoder for the observed z + u + dL/dz condition."""
+
+    decoder_type = "z_u_grad_z_bilinear"
+
+    def __init__(self, config: ClientReceivedDecoderConfig) -> None:
+        if config.z_channels is None:
+            raise ValueError("z_u_grad_z_bilinear requires z_channels")
+        super().__init__(config)
 
 
 __all__ = [
     "ClientReceivedDecoder",
     "ClientReceivedDecoderConfig",
     "SignalAdapter",
+    "ZUGradZDecoder",
 ]

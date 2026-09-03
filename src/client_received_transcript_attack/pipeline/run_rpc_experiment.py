@@ -21,7 +21,7 @@ from ...shared.data.class_catalog import ClassCatalog
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run process-separated U-shaped SL traffic, passive u/dL-dz capture, "
+            "Run process-separated U-shaped SL traffic, passive transcript capture, "
             "checkpoint-free attack training, and isolated evaluation."
         )
     )
@@ -38,6 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-aux-train-samples", type=int, default=None)
     parser.add_argument("--max-aux-validation-samples", type=int, default=None)
     parser.add_argument("--image-size", type=int, default=64)
+    parser.add_argument(
+        "--decoder-architecture",
+        choices=(
+            "baseline_bilinear",
+            "multiscale_pixelshuffle",
+            "residual_detail",
+            "z_u_grad_z_bilinear",
+        ),
+        default="baseline_bilinear",
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -49,12 +59,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decoder-base-channels", type=int, default=256)
     parser.add_argument("--decoder-min-channels", type=int, default=32)
     parser.add_argument("--refinement-blocks", type=int, default=1)
+    parser.add_argument("--film-strength", type=float, default=0.1)
+    parser.add_argument("--detail-condition-channels", type=int, default=8)
+    parser.add_argument("--detail-channels", type=int, default=16)
+    parser.add_argument("--detail-scale", type=float, default=0.25)
+    parser.add_argument("--initialize-from-decoder-checkpoint", default=None)
     parser.add_argument("--l1-weight", type=float, default=1.0)
     parser.add_argument("--ssim-weight", type=float, default=0.75)
     parser.add_argument("--edge-weight", type=float, default=0.15)
     parser.add_argument("--perceptual-weight", type=float, default=0.25)
+    parser.add_argument("--laplacian-weight", type=float, default=0.0)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--early-stopping-patience", type=int, default=0)
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.0)
+    parser.add_argument("--preserve-initial-state", action="store_true")
+    parser.add_argument("--capture-z", action="store_true")
     parser.add_argument("--max-grid-images", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
@@ -150,6 +170,8 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError("auxiliary train and validation splits must be different")
     if args.victim_split in (args.aux_train_split, args.aux_validation_split):
         raise ValueError("victim split must differ from auxiliary splits")
+    if args.decoder_architecture == "z_u_grad_z_bilinear" and not args.capture_z:
+        raise ValueError("z_u_grad_z_bilinear requires --capture-z")
     catalog = ClassCatalog.discover(args.data)
     selected_labels = tuple(args.holdout_labels) if args.holdout_labels else catalog.names
     holdouts = _balanced_holdouts(
@@ -234,6 +256,8 @@ def run(args: argparse.Namespace) -> Path:
             ]
             expected_samples = len(holdouts) if collection_name == "victim_holdout" else max_samples
             _optional_argument(proxy_command, "--expected-samples", expected_samples)
+            if args.capture_z:
+                proxy_command.append("--capture-z")
             proxy_commands.append(proxy_command)
             proxy_process, proxy_log = _start_logged(
                 proxy_command, runtime / f"{collection_name}_proxy.log"
@@ -300,6 +324,8 @@ def run(args: argparse.Namespace) -> Path:
             str(training_output),
             "--image-size",
             str(args.image_size),
+            "--decoder-architecture",
+            str(args.decoder_architecture),
             "--epochs",
             str(args.epochs),
             "--batch-size",
@@ -320,6 +346,14 @@ def run(args: argparse.Namespace) -> Path:
             str(args.decoder_min_channels),
             "--refinement-blocks",
             str(args.refinement_blocks),
+            "--film-strength",
+            str(args.film_strength),
+            "--detail-condition-channels",
+            str(args.detail_condition_channels),
+            "--detail-channels",
+            str(args.detail_channels),
+            "--detail-scale",
+            str(args.detail_scale),
             "--l1-weight",
             str(args.l1_weight),
             "--ssim-weight",
@@ -328,10 +362,16 @@ def run(args: argparse.Namespace) -> Path:
             str(args.edge_weight),
             "--perceptual-weight",
             str(args.perceptual_weight),
+            "--laplacian-weight",
+            str(args.laplacian_weight),
             "--gradient-clip-norm",
             str(args.gradient_clip_norm),
             "--num-workers",
             str(args.num_workers),
+            "--early-stopping-patience",
+            str(args.early_stopping_patience),
+            "--early-stopping-min-delta",
+            str(args.early_stopping_min_delta),
             "--seed",
             str(args.seed),
             "--device",
@@ -339,6 +379,13 @@ def run(args: argparse.Namespace) -> Path:
         ]
         if args.use_label_head:
             trainer_command.append("--use-label-head")
+        if args.preserve_initial_state:
+            trainer_command.append("--preserve-initial-state")
+        _optional_argument(
+            trainer_command,
+            "--initialize-from-decoder-checkpoint",
+            args.initialize_from_decoder_checkpoint,
+        )
         forbidden_role_paths = {
             str(Path(args.server_role_checkpoint)),
             str(Path(args.client_role_checkpoint)),
@@ -381,7 +428,11 @@ def run(args: argparse.Namespace) -> Path:
                     "server_process_loaded": ["server_middle"],
                     "normal_client_process_loaded": ["client_front", "client_tail"],
                     "proxy_loaded_victim_checkpoint": False,
-                    "proxy_persisted_signals": ["u", "dL/dz"],
+                    "proxy_persisted_signals": (
+                        ["z", "u", "dL/dz"]
+                        if args.capture_z
+                        else ["u", "dL/dz"]
+                    ),
                     "attack_trainer_loaded_victim_checkpoint": False,
                     "attack_trainer_received_victim_targets": False,
                     "evaluator_loaded_victim_checkpoint": False,
