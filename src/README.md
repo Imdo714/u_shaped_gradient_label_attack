@@ -94,6 +94,13 @@ client_received_transcript_refiner/
 클라이언트 간 공격 전이 행렬을 실행합니다. 자세한 명령은 해당 폴더의
 `README.md`를 참고합니다.
 
+## shared_pretrained_encoder_drift_attack
+
+`shared_pretrained_encoder_drift_attack/`은 공통 Autoencoder Encoder 배포 후 발생하는
+client별 representation drift와 `z + dL/dz` 복원 공격을 epoch별로 평가합니다.
+MNIST, Fashion-MNIST, CIFAR-10 native 해상도에서는 동일 target manifest를 사용해
+보조 데이터 기반 Decoder와 data-oblivious UnSplit baseline도 비교합니다.
+
 ## workspace
 
 `workspace/`는 기본 경로는 shared/configuration/workspace_paths.py에서 한 번만 정의합니다.
