@@ -17,6 +17,9 @@ workspace/data/letter_experiment/
 workspace/data/synthetic_document_experiment/
 workspace/data/unsplit_benchmark/
 workspace/data/anchors/
+workspace/data/shared_pretrained_encoder_joint_attack/**/pretrain/
+workspace/data/shared_pretrained_encoder_joint_attack/**/attacker/
+workspace/data/shared_pretrained_encoder_joint_attack/**/victim/
 workspace/data/**/*.part
 
 # Large machine-learning artifacts accidentally written outside results/.

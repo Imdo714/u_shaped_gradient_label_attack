@@ -1,5 +1,8 @@
 # Shared pretrained encoder drift attack
 
+`u + dL/dz`로 5-class 라벨 추론과 이미지 복원을 함께 평가하는 새 실험은
+[JOINT_LABEL_RECONSTRUCTION.md](JOINT_LABEL_RECONSTRUCTION.md)를 참고한다.
+
 ## 연구 목표
 
 동일한 사전학습 Encoder를 여러 클라이언트에 배포하는 Split Learning 환경에서,
