@@ -6,6 +6,11 @@ fine-tuning하고, 악성 client가 초기 상태의 public auxiliary transcript
 
 - `pipeline/pretrain_autoencoder.py`: Autoencoder 사전학습과 `E⁽⁰⁾` 저장
 - `pipeline/run_drift_attack.py`: classifier warmup, 다중 client 학습, 공격 및 drift 평가
+- `pipeline/run_online_z_attack.py`: 실제 `z`만 사용하는 online 라벨 추론 비교
+- `pipeline/run_online_z_gradient_attack.py`: 실제 `z + dL/dz`를 결합한 online 라벨 추론 비교
+- `pipeline/run_online_fair_z_comparison.py`: 한 Split 실행을 공유하는 `dL/dz` / `u + dL/dz` / `z` / `z + dL/dz` 공정 비교
+- `pipeline/run_paper_label_condition.py`: ResNet-20 한 조건에서 C_psi/Cosine/PCAT-label/SDAR-label paired 비교
+- `pipeline/run_paper_label_sweep.py`: CIFAR-10과 Animal5의 split·auxiliary·관측량 전체 재개 가능 스위프
 - `pipeline/run_unsplit_comparison.py`: MNIST/Fashion-MNIST/CIFAR-10 동일 샘플 비교
 - `models.py`: 독립적인 representation/gradient branch와 fusion decoder
 - `unsplit_benchmark.py`: 공개 UnSplit 구조, 교대 최적화 baseline, native-size Decoder
