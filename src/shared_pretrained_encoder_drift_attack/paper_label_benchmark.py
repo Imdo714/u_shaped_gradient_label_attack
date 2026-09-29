@@ -18,6 +18,57 @@ from .pipeline.run_online_transcript_label_attack import (
 )
 
 
+AUGMENTATION_MODES = ("default", "none", "dynamic_flip")
+
+
+class IndependentRandomHorizontalFlip:
+    """Horizontal flip driven by a private RNG stream.
+
+    The controlled augmentation ablation must not shift the global PyTorch RNG
+    stream used for model initialization, dropout, or the competing attacks.
+    This transform therefore owns its generator.  Controlled runs require
+    ``num_workers=0`` so the view sequence is not cloned across workers.
+    """
+
+    def __init__(self, probability: float, seed: int) -> None:
+        if not 0 <= probability <= 1:
+            raise ValueError("flip probability must be in [0, 1]")
+        self.probability = probability
+        self.generator = torch.Generator().manual_seed(seed)
+
+    def __call__(self, image):
+        if float(torch.rand((), generator=self.generator)) < self.probability:
+            return transforms.functional.hflip(image)
+        return image
+
+
+def _training_transform(
+    dataset_name: str,
+    augmentation: str,
+    *,
+    augmentation_seed: int,
+) -> transforms.Compose:
+    if augmentation not in AUGMENTATION_MODES:
+        raise ValueError(
+            f"augmentation must be one of {', '.join(AUGMENTATION_MODES)}"
+        )
+    operations: list[object] = []
+    if dataset_name == "animal5":
+        operations.append(transforms.Resize((32, 32)))
+    elif dataset_name == "cifar10":
+        if augmentation == "default":
+            operations.append(transforms.RandomCrop(32, padding=4))
+    else:
+        raise ValueError("dataset must be cifar10 or animal5")
+
+    if augmentation == "default":
+        operations.append(transforms.RandomHorizontalFlip())
+    elif augmentation == "dynamic_flip":
+        operations.append(IndependentRandomHorizontalFlip(0.5, augmentation_seed))
+    operations.append(transforms.ToTensor())
+    return transforms.Compose(operations)
+
+
 class BasicBlock(nn.Module):
     expansion = 1
 
@@ -436,13 +487,18 @@ def make_datasets(
     seed: int,
     *,
     download: bool,
+    victim_augmentation: str = "default",
+    auxiliary_augmentation: str = "default",
 ) -> DatasetBundle:
-    train_transform = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ]
+    victim_transform = _training_transform(
+        dataset_name,
+        victim_augmentation,
+        augmentation_seed=seed + 1_000_003,
+    )
+    auxiliary_transform = _training_transform(
+        dataset_name,
+        auxiliary_augmentation,
+        augmentation_seed=seed + 2_000_003,
     )
     eval_transform = transforms.ToTensor()
     root = Path(data_root)
@@ -452,10 +508,10 @@ def make_datasets(
             index_source.targets, seed=2026
         )
         victim_base = datasets.CIFAR10(
-            root, train=True, transform=train_transform, download=download
+            root, train=True, transform=victim_transform, download=download
         )
         auxiliary_base = datasets.CIFAR10(
-            root, train=True, transform=train_transform, download=download
+            root, train=True, transform=auxiliary_transform, download=download
         )
         pool_targets = [index_source.targets[index] for index in auxiliary_pool_indices]
         relative, effective = stratified_subset_indices(
@@ -477,17 +533,10 @@ def make_datasets(
         )
     if dataset_name != "animal5":
         raise ValueError("dataset must be cifar10 or animal5")
-    animal_transform = transforms.Compose(
-        [
-            transforms.Resize((32, 32)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ]
-    )
     animal_eval = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor()])
-    victim = datasets.ImageFolder(root / "victim" / "train", transform=animal_transform)
+    victim = datasets.ImageFolder(root / "victim" / "train", transform=victim_transform)
     auxiliary_pool = datasets.ImageFolder(
-        root / "attacker" / "train", transform=animal_transform
+        root / "attacker" / "train", transform=auxiliary_transform
     )
     if victim.classes != auxiliary_pool.classes:
         raise ValueError("Animal5 victim and attacker class mappings differ")
@@ -558,9 +607,11 @@ def seed_all(seed: int) -> None:
 
 
 __all__ = [
+    "AUGMENTATION_MODES",
     "ClientParts",
     "DatasetBundle",
     "Exchange",
+    "IndependentRandomHorizontalFlip",
     "RepresentationDiscriminator",
     "ResNet20Front",
     "ResNet20Middle",

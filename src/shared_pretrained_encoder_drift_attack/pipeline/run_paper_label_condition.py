@@ -14,6 +14,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from torch import Tensor, nn
 
 from ..paper_label_benchmark import (
+    AUGMENTATION_MODES,
     ClientParts,
     RunningPrototypes,
     exchange_step,
@@ -58,6 +59,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attack-learning-rate", type=float, default=1e-3)
     parser.add_argument("--sdar-lambda", type=float, default=0.02)
     parser.add_argument("--sdar-label-flip", type=float, default=0.2)
+    parser.add_argument(
+        "--victim-augmentation",
+        choices=AUGMENTATION_MODES,
+        default="default",
+        help="Victim training transform. Controlled modes require --num-workers 0.",
+    )
+    parser.add_argument(
+        "--auxiliary-augmentation",
+        choices=AUGMENTATION_MODES,
+        default="default",
+        help="Auxiliary-client transform. Controlled modes require --num-workers 0.",
+    )
     parser.add_argument(
         "--signal-modes", nargs="+", choices=SIGNAL_MODES, default=list(SIGNAL_MODES)
     )
@@ -164,6 +177,9 @@ def _evaluate(
     device: torch.device,
     output: Path,
 ) -> list[dict[str, object]]:
+    victim_batch_size = min(args.batch_size, len(bundle.victim_train))
+    auxiliary_batch_size = min(args.batch_size, len(bundle.auxiliary_train))
+    effective_attack_updates = max(0, budget - args.attack_start_step + 1)
     labels: list[int] = []
     target_predictions: list[int] = []
     predictions: dict[str, list[int]] = {
@@ -208,11 +224,24 @@ def _evaluate(
         "split_level": args.split_level,
         "requested_aux_fraction": args.aux_fraction,
         "effective_aux_fraction": bundle.effective_aux_fraction,
+        "victim_augmentation": args.victim_augmentation,
+        "auxiliary_augmentation": args.auxiliary_augmentation,
         "seed": args.seed,
         "observation_steps": budget,
+        # Kept for compatibility with the original sweep output.  The exact
+        # role-specific counts below account for datasets smaller than the
+        # requested batch size (Animal5 uses 10 auxiliary images here).
         "sample_exposures": budget * args.batch_size,
+        "requested_batch_size": args.batch_size,
+        "victim_batch_size": victim_batch_size,
+        "auxiliary_batch_size": auxiliary_batch_size,
+        "victim_sample_exposures": budget * victim_batch_size,
+        "auxiliary_sample_exposures": budget * auxiliary_batch_size,
+        "attack_auxiliary_sample_exposures": (
+            effective_attack_updates * auxiliary_batch_size
+        ),
         "attack_start_step": args.attack_start_step,
-        "effective_attack_updates": max(0, budget - args.attack_start_step + 1),
+        "effective_attack_updates": effective_attack_updates,
     }
     num_classes = len(bundle.class_names)
     rows = [
@@ -245,6 +274,11 @@ def _validate_args(args: argparse.Namespace) -> tuple[int, ...]:
         raise ValueError("--sdar-label-flip must be in [0, 1)")
     if args.sdar_lambda < 0:
         raise ValueError("--sdar-lambda cannot be negative")
+    if (
+        args.victim_augmentation != "default"
+        or args.auxiliary_augmentation != "default"
+    ) and args.num_workers != 0:
+        raise ValueError("controlled augmentation modes require --num-workers 0")
     return budgets
 
 
@@ -260,6 +294,8 @@ def run(args: argparse.Namespace) -> None:
         args.aux_fraction,
         args.seed,
         download=args.download,
+        victim_augmentation=args.victim_augmentation,
+        auxiliary_augmentation=args.auxiliary_augmentation,
     )
     num_classes = len(bundle.class_names)
     victim = make_client(args.split_level, num_classes, device)
@@ -451,7 +487,22 @@ def run(args: argparse.Namespace) -> None:
         "resolved_observation_budgets": list(budgets),
         "observation_budget_unit": "communication_step_batch",
         "sample_exposure_formula": "observation_steps * batch_size",
+        "resolved_victim_batch_size": min(
+            args.batch_size, len(bundle.victim_train)
+        ),
+        "resolved_auxiliary_batch_size": min(
+            args.batch_size, len(bundle.auxiliary_train)
+        ),
+        "exact_exposure_fields": [
+            "victim_sample_exposures",
+            "auxiliary_sample_exposures",
+            "attack_auxiliary_sample_exposures",
+        ],
         "gradient_scale": "dL/dz multiplied by public batch size (per-sample loss convention)",
+        "augmentation_rng": (
+            "private deterministic streams for controlled dynamic_flip; "
+            "legacy global RNG for default"
+        ),
         "class_names": list(bundle.class_names),
         "victim_train_size": bundle.victim_train_size,
         "auxiliary_pool_size": bundle.auxiliary_pool_size,
